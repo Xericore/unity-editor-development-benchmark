@@ -9,13 +9,13 @@ using Debug = UnityEngine.Debug;
 namespace UnityEditorDevelopmentBenchmark.Editor
 {
     [InitializeOnLoad]
-    public static class DomainReloadTimer
+    public static class CompilationAndAssemblyReloadTimer
     {
         public static TimeSpan TotalDuration { get; private set; }
         
         private static readonly Stopwatch _compilationStopwatch;
 
-        static DomainReloadTimer()
+        static CompilationAndAssemblyReloadTimer()
         {
             _compilationStopwatch = new Stopwatch();
 
