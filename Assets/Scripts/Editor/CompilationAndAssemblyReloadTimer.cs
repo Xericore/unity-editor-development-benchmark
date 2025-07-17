@@ -11,7 +11,9 @@ namespace UnityEditorDevelopmentBenchmark.Editor
     [InitializeOnLoad]
     public static class CompilationAndAssemblyReloadTimer
     {
-        public static TimeSpan TotalDuration { get; private set; }
+        public static event Action<TimeSpan> TotalDurationUpdated;
+
+        private static TimeSpan TotalDuration { get; set; }
         
         private static readonly Stopwatch _compilationStopwatch;
 
@@ -60,6 +62,8 @@ namespace UnityEditorDevelopmentBenchmark.Editor
 
             Debug.Log($"Total time from Json: {totalSpan}");
             TotalDuration = totalSpan;
+            
+            TotalDurationUpdated?.Invoke(TotalDuration);
         }
     }
 }
