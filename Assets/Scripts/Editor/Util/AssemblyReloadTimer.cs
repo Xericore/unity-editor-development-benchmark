@@ -3,42 +3,25 @@ using System.Diagnostics;
 using System.Linq;
 using Cysharp.Threading.Tasks;
 using UnityEditor;
-using UnityEditor.Compilation;
 using Debug = UnityEngine.Debug;
 
-namespace UnityEditorDevelopmentBenchmark.Editor
+namespace UnityEditorDevelopmentBenchmark.Editor.Util
 {
     [InitializeOnLoad]
-    public static class CompilationAndAssemblyReloadTimer
+    public static class AssemblyReloadTimer
     {
-        public static event Action<TimeSpan> TotalDurationUpdated;
-
+        public static event Action Updated;
+        
+        public static TimeSpan AssemblyReloadDuration { get; private set; }
         private static TimeSpan TotalDuration { get; set; }
         
         private static readonly Stopwatch _compilationStopwatch;
 
-        static CompilationAndAssemblyReloadTimer()
+        static AssemblyReloadTimer()
         {
-            _compilationStopwatch = new Stopwatch();
-
-            CompilationPipeline.compilationStarted += CompilationStarted;
-            CompilationPipeline.compilationFinished += CompilationFinished;
-            
             AssemblyReloadEvents.afterAssemblyReload += OnAfterAssemblyReload;
         }
         
-        private static void CompilationStarted(object obj)
-        {
-            _compilationStopwatch.Restart();
-        }
-
-        private static void CompilationFinished(object obj)
-        {
-            _compilationStopwatch.Stop();
-            Debug.Log("--------------------------------------------");
-            Debug.Log($"Compilation took: {_compilationStopwatch.Elapsed}");
-        }
-
         private static void OnAfterAssemblyReload()
         {
             UniTask.Void(WaitAndGetCompilationData);
@@ -51,19 +34,19 @@ namespace UnityEditorDevelopmentBenchmark.Editor
 
             var compilationData = CompilationData.GetAll();
 
-            var totalReloadSpan = compilationData.iterations
+            AssemblyReloadDuration = compilationData.iterations
                 .Select(item => item.AfterAssemblyReload - item.BeforeAssemblyReload)
                 .Aggregate((result, item) => result + item);
 
-            Debug.Log($"Assembly reloads took (from CompilationData): {totalReloadSpan}");
-
+            Debug.Log($"Assembly reloads took (from CompilationData): {AssemblyReloadDuration}");
+            
             var totalSpan = compilationData.iterations.Last().AfterAssemblyReload -
                             compilationData.iterations.First().CompilationStarted;
 
             Debug.Log($"Total time from Json: {totalSpan}");
             TotalDuration = totalSpan;
             
-            TotalDurationUpdated?.Invoke(TotalDuration);
+            Updated?.Invoke();
         }
     }
 }

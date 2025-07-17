@@ -1,31 +1,54 @@
 ﻿using System;
-using UnityEngine;
+using System.Diagnostics;
+using UnityEditor;
+using UnityEditor.Compilation;
 
 namespace UnityEditorDevelopmentBenchmark.Editor
 {
     public class CompilationUserWaitTimeTracker : UserWaitTimeTrackerBase
     {
+        private static Stopwatch _compilationStopwatch;
+        
         public override event Action<TimeSpan> UserWaited;
+        
+        private const string _editorPrefsKeyLastWaitTime = "CompilationUserWaitTimeTracker_LastWaitTime";
+
+        public override UserWaitTimeData LastWaitTimeData
+        {
+            get
+            {
+                var floatTime = EditorPrefs.GetFloat(_editorPrefsKeyLastWaitTime);
+                
+                return new UserWaitTimeData("Compilation", TimeSpan.FromMilliseconds(floatTime));
+            }
+        }
 
         public CompilationUserWaitTimeTracker()
         {
-            LastWaitTimeData = new UserWaitTimeData("Compilation time", TimeSpan.Zero);
-            Debug.Log("<color=green>CompilationUserWaitTimeTracker constructor called</color>");
-            
-            CompilationAndAssemblyReloadTimer.TotalDurationUpdated += CompilationAndAssemblyReloadTimerOnTotalDurationUpdated;
-        }
+            _compilationStopwatch = new Stopwatch();
 
-        private void CompilationAndAssemblyReloadTimerOnTotalDurationUpdated(TimeSpan timeSpan)
+            CompilationPipeline.compilationStarted += CompilationStarted;
+            CompilationPipeline.compilationFinished += CompilationFinished;
+        }
+        
+        private void CompilationStarted(object obj)
         {
-            Debug.Log("<color=yellow>CompilationUserWaitTimeTracker</color> total duration updated: " + timeSpan);
-            LastWaitTimeData = new UserWaitTimeData("Compilation time", timeSpan);
-            UserWaited?.Invoke(timeSpan);
+            _compilationStopwatch.Restart();
+        }
+        
+        private void CompilationFinished(object obj)
+        {
+            _compilationStopwatch.Stop();
+            
+            EditorPrefs.SetFloat(_editorPrefsKeyLastWaitTime, _compilationStopwatch.ElapsedMilliseconds);
+            
+            UserWaited?.Invoke(LastWaitTimeData.WaitTime);
         }
         
         ~CompilationUserWaitTimeTracker()
         {
-            Debug.Log("<color=red>CompilationUserWaitTimeTracker</color> destructor called");
-            CompilationAndAssemblyReloadTimer.TotalDurationUpdated -= CompilationAndAssemblyReloadTimerOnTotalDurationUpdated;
+            CompilationPipeline.compilationStarted -= CompilationStarted;
+            CompilationPipeline.compilationFinished -= CompilationFinished;
         }
     }
 }

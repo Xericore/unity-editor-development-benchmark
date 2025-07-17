@@ -6,6 +6,7 @@ namespace UnityEditorDevelopmentBenchmark.Editor
     {
         public abstract event Action<TimeSpan> UserWaited;
         
-        public UserWaitTimeData LastWaitTimeData { get; protected set; }
+        public abstract UserWaitTimeData LastWaitTimeData { get; }
+
     }
 }
