@@ -64,7 +64,17 @@ namespace UnityEditorDevelopmentBenchmark.Editor
                 title = "Name",
                 width = 120,
                 makeCell = () => new Label(),
-                bindCell = (element, i) => ((Label) element).text = _lastWaitTimeData[i].Name
+                bindCell = (element, i) =>
+                {
+                    var label = (Label) element;
+                    label.text = _lastWaitTimeData[i].Name;
+                    label.style.paddingLeft = 8;
+
+                    if (!label.text.Contains("Total"))
+                        return;
+                    
+                    label.style.unityFontStyleAndWeight = FontStyle.Bold;
+                }
             });
 
             table.columns.Add(new Column
