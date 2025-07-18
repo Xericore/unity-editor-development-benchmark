@@ -104,7 +104,7 @@ namespace UnityEditorDevelopmentBenchmark.Editor
 
             table.columns.Add(new Column
             {
-                title = "Last Wait Time",
+                title = "Last Wait Time [mm:ss.ff]",
                 width = 120,
                 makeCell = () => new Label(),
                 bindCell = (element, i) => ((Label) element).text =
@@ -113,11 +113,11 @@ namespace UnityEditorDevelopmentBenchmark.Editor
             
             table.columns.Add(new Column
             {
-                title = "Total Wait Time",
+                title = "Total Wait Time [hh:mm:ss]",
                 width = 120,
                 makeCell = () => new Label(),
                 bindCell = (element, i) => ((Label) element).text =
-                    $@"{_waitTimeDatas[i].TotalWaitTime:mm\:ss\.ff}"
+                    $@"{_waitTimeDatas[i].TotalWaitTime:hh\:mm\:ss}"
             });
             
             table.columns.Add(new Column
