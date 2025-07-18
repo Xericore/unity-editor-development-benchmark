@@ -1,15 +1,11 @@
-﻿using System;
-using UnityEditorDevelopmentBenchmark.Editor.Util;
-using UnityEngine;
+﻿using UnityEditorDevelopmentBenchmark.Editor.Util;
 
 namespace UnityEditorDevelopmentBenchmark.Editor
 {
     public class DomainReloadUserWaitTimeTracker : UserWaitTimeTrackerBase
     {
-        public override event Action<TimeSpan> UserWaited;
+        protected override string FriendlyName => "Domain Reload";
         
-        public override UserWaitTimeData LastWaitTimeData => new("Assembly Reload", AssemblyReloadTimer.AssemblyReloadDuration);
-
         public DomainReloadUserWaitTimeTracker()
         {
             AssemblyReloadTimer.Updated += AssemblyReloadTimerOnUpdated;
@@ -17,7 +13,7 @@ namespace UnityEditorDevelopmentBenchmark.Editor
 
         private void AssemblyReloadTimerOnUpdated()
         {
-            UserWaited?.Invoke(AssemblyReloadTimer.AssemblyReloadDuration);
+            ReportSingleWaitEvent(AssemblyReloadTimer.AssemblyReloadDuration);
         }
         
         ~DomainReloadUserWaitTimeTracker()

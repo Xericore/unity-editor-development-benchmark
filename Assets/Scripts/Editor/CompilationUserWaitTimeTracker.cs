@@ -7,22 +7,10 @@ namespace UnityEditorDevelopmentBenchmark.Editor
 {
     public class CompilationUserWaitTimeTracker : UserWaitTimeTrackerBase
     {
+        protected override string FriendlyName => "Compilation";
+        
         private static Stopwatch _compilationStopwatch;
         
-        public override event Action<TimeSpan> UserWaited;
-        
-        private const string _editorPrefsKeyLastWaitTime = "CompilationUserWaitTimeTracker_LastWaitTime";
-
-        public override UserWaitTimeData LastWaitTimeData
-        {
-            get
-            {
-                var floatTime = EditorPrefs.GetFloat(_editorPrefsKeyLastWaitTime);
-                
-                return new UserWaitTimeData("Compilation", TimeSpan.FromMilliseconds(floatTime));
-            }
-        }
-
         public CompilationUserWaitTimeTracker()
         {
             _compilationStopwatch = new Stopwatch();
@@ -31,7 +19,7 @@ namespace UnityEditorDevelopmentBenchmark.Editor
             CompilationPipeline.compilationFinished += CompilationFinished;
         }
         
-        private void CompilationStarted(object obj)
+        private static void CompilationStarted(object obj)
         {
             _compilationStopwatch.Restart();
         }
@@ -40,9 +28,8 @@ namespace UnityEditorDevelopmentBenchmark.Editor
         {
             _compilationStopwatch.Stop();
             
-            EditorPrefs.SetFloat(_editorPrefsKeyLastWaitTime, _compilationStopwatch.ElapsedMilliseconds);
-            
-            UserWaited?.Invoke(LastWaitTimeData.WaitTime);
+
+            ReportSingleWaitEvent(_compilationStopwatch.Elapsed);
         }
         
         ~CompilationUserWaitTimeTracker()

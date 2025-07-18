@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using UnityEditor;
 
 namespace UnityEditorDevelopmentBenchmark.Editor
 {
@@ -49,17 +50,26 @@ namespace UnityEditorDevelopmentBenchmark.Editor
             return waitTimeData;
         }
 
-        private UserWaitTimeData GetTotalWaitTimeData(List<UserWaitTimeData> waitTimeData)
+        private static UserWaitTimeData GetTotalWaitTimeData(List<UserWaitTimeData> waitTimeData)
         {
-            var totalWaitTime = waitTimeData.Aggregate(TimeSpan.Zero, (current, data) => current + data.WaitTime);
+            var lastTotal = waitTimeData.Aggregate(TimeSpan.Zero, (current, data) => current + data.WaitTime);
+            var totalTotal = waitTimeData.Aggregate(TimeSpan.Zero, (current, data) => current + data.TotalWaitTime);
 
-            return new UserWaitTimeData("Total", totalWaitTime);
+            return new UserWaitTimeData("Total", lastTotal, totalTotal);
         }
 
         ~UserWaitTimeAggregator()
         {
             _compilationUserWaitTimeTracker.UserWaited -= OnCompilationUserWaitTimeTrackerOnUserWaited;
             _domainReloadUserWaitTimeTracker.UserWaited -= OnCompilationUserWaitTimeTrackerOnUserWaited;
+        }
+
+        public void ResetTotalWaitTime()
+        {
+            _compilationUserWaitTimeTracker.ResetTotalWaitTime();
+            _domainReloadUserWaitTimeTracker.ResetTotalWaitTime();
+            
+            AnyWaitEventFired?.Invoke();
         }
     }
 }

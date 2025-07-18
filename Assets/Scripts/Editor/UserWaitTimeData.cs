@@ -7,11 +7,13 @@ namespace UnityEditorDevelopmentBenchmark.Editor
     {
         public string Name { get; }
         public TimeSpan WaitTime { get; }
-        
-        public UserWaitTimeData(string name, TimeSpan waitTime)
+        public TimeSpan TotalWaitTime { get; }
+
+        public UserWaitTimeData(string name, TimeSpan waitTime, TimeSpan totalWaitTime)
         {
             Name = name;
             WaitTime = waitTime;
+            TotalWaitTime = totalWaitTime;
         }
     }
 }
