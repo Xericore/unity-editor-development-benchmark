@@ -1,4 +1,5 @@
 ﻿using System.Collections.Generic;
+using System.Linq;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.UIElements;
@@ -117,6 +118,24 @@ namespace UnityEditorDevelopmentBenchmark.Editor
                 makeCell = () => new Label(),
                 bindCell = (element, i) => ((Label) element).text =
                     $@"{_waitTimeDatas[i].TotalWaitTime:mm\:ss\.ff}"
+            });
+            
+            table.columns.Add(new Column
+            {
+                title = "Ratio (Total)",
+                width = 120,
+                makeCell = () => new Label(),
+                bindCell = (element, i) => ((Label) element).text = 
+                    $"{_waitTimeDatas[i].TotalWaitTime.TotalMilliseconds / _waitTimeDatas.Last().TotalWaitTime.TotalMilliseconds:P1}"
+            });
+            
+            
+            table.columns.Add(new Column
+            {
+                title = "Ratio (Total)",
+                width = 120,
+                makeCell = () => new ProgressBar(),
+                bindCell = (element, i) => ((ProgressBar) element).value = (float)(_waitTimeDatas[i].TotalWaitTime.TotalMilliseconds / _waitTimeDatas.Last().TotalWaitTime.TotalMilliseconds)*100f
             });
 
             root.Add(table);
