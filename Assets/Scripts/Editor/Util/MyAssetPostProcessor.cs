@@ -1,13 +1,14 @@
 using System;
 using System.Diagnostics;
 using UnityEditor;
-using Debug = UnityEngine.Debug;
 
-namespace UnityEditorDevelopmentBenchmark.Editor
+namespace UnityEditorDevelopmentBenchmark.Editor.Util
 {
     public class MyAssetPostprocessor : AssetPostprocessor
     {
-        public TimeSpan TotalDuration => _assetStopwatch?.Elapsed ?? TimeSpan.Zero;
+        public static event Action<TimeSpan> UserWaited;
+
+        private static TimeSpan TotalDuration => _assetStopwatch?.Elapsed ?? TimeSpan.Zero;
         
         private static readonly Stopwatch _assetStopwatch = new();
 
@@ -24,7 +25,7 @@ namespace UnityEditorDevelopmentBenchmark.Editor
             string[] movedFromAssetPaths)
         {
             _assetStopwatch.Stop();
-            Debug.Log($"Importing all assets took: {_assetStopwatch.Elapsed}");
+            UserWaited?.Invoke(TotalDuration);
         }
     }
 }
