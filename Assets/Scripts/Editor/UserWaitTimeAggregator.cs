@@ -2,51 +2,46 @@
 using System.Collections.Generic;
 using System.Linq;
 using UnityEditor;
+using UnityEditorDevelopmentBenchmark.Editor.UserWaitTimeTrackers;
 
 namespace UnityEditorDevelopmentBenchmark.Editor
 {
-    public class UserWaitTimeAggregator
+    [InitializeOnLoad]
+    public static class UserWaitTimeAggregator
     {
-        public event Action AnyWaitEventFired;
+        public static event Action AnyWaitEventFired;
         
-        private static UserWaitTimeAggregator _instance;
-        public static UserWaitTimeAggregator Instance
-        {
-            get
-            {
-                if (_instance == null)
-                    _instance = new UserWaitTimeAggregator();
-                return _instance;
-            }
-        }
-        
-        private readonly CompilationUserWaitTimeTracker _compilationUserWaitTimeTracker;
-        private readonly DomainReloadUserWaitTimeTracker _domainReloadUserWaitTimeTracker;
-        private readonly AssetImportUserWaitTimeTracker _assetImportUserWaitTimeTracker;
+        private static readonly CompilationUserWaitTimeTracker _compilationUserWaitTimeTracker;
+        private static readonly DomainReloadUserWaitTimeTracker _domainReloadUserWaitTimeTracker;
+        private static readonly AssetImportUserWaitTimeTracker _assetImportUserWaitTimeTracker;
+        private static readonly SwitchPlayModeUserWaitTimeTracker _switchPlayModeUserWaitTimeTracker;
 
-        private UserWaitTimeAggregator()
+        static UserWaitTimeAggregator()
         {
             _compilationUserWaitTimeTracker = new CompilationUserWaitTimeTracker();
             _domainReloadUserWaitTimeTracker = new DomainReloadUserWaitTimeTracker();
             _assetImportUserWaitTimeTracker = new AssetImportUserWaitTimeTracker();
+            _switchPlayModeUserWaitTimeTracker = new SwitchPlayModeUserWaitTimeTracker();
             
             _compilationUserWaitTimeTracker.UserWaited += OnCompilationUserWaitTimeTrackerOnUserWaited;
             _domainReloadUserWaitTimeTracker.UserWaited += OnCompilationUserWaitTimeTrackerOnUserWaited;
             _assetImportUserWaitTimeTracker.UserWaited += OnCompilationUserWaitTimeTrackerOnUserWaited;
+            _switchPlayModeUserWaitTimeTracker.UserWaited += OnCompilationUserWaitTimeTrackerOnUserWaited;
         }
 
-        private void OnCompilationUserWaitTimeTrackerOnUserWaited(TimeSpan timeSpan)
+        private static void OnCompilationUserWaitTimeTrackerOnUserWaited(TimeSpan timeSpan)
         {
             AnyWaitEventFired?.Invoke();
         }
 
-        public List<UserWaitTimeData> GetWaitTimeData()
+        public static List<UserWaitTimeData> GetWaitTimeData()
         {
             var waitTimeData = new List<UserWaitTimeData>
             {
                 _compilationUserWaitTimeTracker.LastWaitTimeData,
                 _domainReloadUserWaitTimeTracker.LastWaitTimeData,
-                _assetImportUserWaitTimeTracker.LastWaitTimeData
+                _assetImportUserWaitTimeTracker.LastWaitTimeData,
+                _switchPlayModeUserWaitTimeTracker.LastWaitTimeData
             };
             
             waitTimeData.Add(GetTotalWaitTimeData(waitTimeData));
@@ -61,19 +56,13 @@ namespace UnityEditorDevelopmentBenchmark.Editor
 
             return new UserWaitTimeData("Total", lastTotal, totalTotal);
         }
-
-        ~UserWaitTimeAggregator()
-        {
-            _compilationUserWaitTimeTracker.UserWaited -= OnCompilationUserWaitTimeTrackerOnUserWaited;
-            _domainReloadUserWaitTimeTracker.UserWaited -= OnCompilationUserWaitTimeTrackerOnUserWaited;
-            _assetImportUserWaitTimeTracker.UserWaited -= OnCompilationUserWaitTimeTrackerOnUserWaited;
-        }
-
-        public void ResetTotalWaitTime()
+        
+        public static void ResetTotalWaitTime()
         {
             _compilationUserWaitTimeTracker.ResetTotalWaitTime();
             _domainReloadUserWaitTimeTracker.ResetTotalWaitTime();
             _assetImportUserWaitTimeTracker.ResetTotalWaitTime();
+            _switchPlayModeUserWaitTimeTracker.ResetTotalWaitTime();
             
             AnyWaitEventFired?.Invoke();
         }

@@ -1,9 +1,7 @@
-﻿using System;
-using System.Diagnostics;
-using UnityEditor;
+﻿using System.Diagnostics;
 using UnityEditor.Compilation;
 
-namespace UnityEditorDevelopmentBenchmark.Editor
+namespace UnityEditorDevelopmentBenchmark.Editor.UserWaitTimeTrackers
 {
     public class CompilationUserWaitTimeTracker : UserWaitTimeTrackerBase
     {

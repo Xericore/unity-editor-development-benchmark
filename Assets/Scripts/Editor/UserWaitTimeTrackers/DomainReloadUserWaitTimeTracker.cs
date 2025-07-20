@@ -1,6 +1,6 @@
 ﻿using UnityEditorDevelopmentBenchmark.Editor.Util;
 
-namespace UnityEditorDevelopmentBenchmark.Editor
+namespace UnityEditorDevelopmentBenchmark.Editor.UserWaitTimeTrackers
 {
     public class DomainReloadUserWaitTimeTracker : UserWaitTimeTrackerBase
     {

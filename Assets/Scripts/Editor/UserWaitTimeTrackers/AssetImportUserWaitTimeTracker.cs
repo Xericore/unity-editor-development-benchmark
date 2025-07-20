@@ -1,8 +1,7 @@
 using System;
-using UnityEditor;
 using UnityEditorDevelopmentBenchmark.Editor.Util;
 
-namespace UnityEditorDevelopmentBenchmark.Editor
+namespace UnityEditorDevelopmentBenchmark.Editor.UserWaitTimeTrackers
 {
     public class AssetImportUserWaitTimeTracker : UserWaitTimeTrackerBase
     {

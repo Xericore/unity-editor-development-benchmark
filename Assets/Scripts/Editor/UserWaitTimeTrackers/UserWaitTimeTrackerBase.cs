@@ -1,7 +1,7 @@
 ﻿using System;
 using UnityEditor;
 
-namespace UnityEditorDevelopmentBenchmark.Editor
+namespace UnityEditorDevelopmentBenchmark.Editor.UserWaitTimeTrackers
 {
     public abstract class UserWaitTimeTrackerBase
     {

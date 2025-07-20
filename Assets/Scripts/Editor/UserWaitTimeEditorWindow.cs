@@ -23,12 +23,12 @@ namespace UnityEditorDevelopmentBenchmark.Editor
             
             RefreshAndDrawData(root);
             
-            UserWaitTimeAggregator.Instance.AnyWaitEventFired += () => RefreshAndDrawData(root);
+            UserWaitTimeAggregator.AnyWaitEventFired += () => RefreshAndDrawData(root);
         }
 
         private void RefreshAndDrawData(VisualElement root)
         {
-            _waitTimeDatas = UserWaitTimeAggregator.Instance.GetWaitTimeData();
+            _waitTimeDatas = UserWaitTimeAggregator.GetWaitTimeData();
             
             root.Clear();
             
@@ -47,10 +47,7 @@ namespace UnityEditorDevelopmentBenchmark.Editor
                 style = {maxWidth = new StyleLength(160)},
             };
             
-            resetTotalButton.clicked += () =>
-            {
-                UserWaitTimeAggregator.Instance.ResetTotalWaitTime();
-            };
+            resetTotalButton.clicked += UserWaitTimeAggregator.ResetTotalWaitTime;
             
             buttonRow.Add(resetTotalButton);
 
