@@ -38,6 +38,13 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Util
                 .Select(item => item.AfterAssemblyReload - item.BeforeAssemblyReload)
                 .Aggregate((result, item) => result + item);
 
+            if(AssemblyReloadDuration > TimeSpan.FromDays(7))
+            {
+                // This can happen when Unity is starting up.
+                // In that case, we don't want to report it as a user wait time.
+                return;
+            }
+            
             Debug.Log($"Assembly reloads took (from CompilationData): {AssemblyReloadDuration}");
             
             var totalSpan = compilationData.iterations.Last().AfterAssemblyReload -

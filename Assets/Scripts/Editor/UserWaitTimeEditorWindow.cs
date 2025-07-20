@@ -9,13 +9,13 @@ namespace UnityEditorDevelopmentBenchmark.Editor
 {
     public class UserWaitTimeEditorWindow : EditorWindow
     {
-        private List<UserWaitTimeData> _waitTimeDatas;
+        private List<UserWaitTimeData> _allWaitTimeData;
 
-        [MenuItem("Window/Analysis/User Wait Time Editor Window")]
+        [MenuItem("Window/Analysis/User Wait Time Tracker")]
         public static void ShowWindow()
         {
             var wnd = GetWindow<UserWaitTimeEditorWindow>();
-            wnd.titleContent = new GUIContent("User Wait Time Editor Window");
+            wnd.titleContent = new GUIContent("User Wait Time");
         }
         
         public void CreateGUI()
@@ -29,7 +29,7 @@ namespace UnityEditorDevelopmentBenchmark.Editor
 
         private void RefreshAndDrawData(VisualElement root)
         {
-            _waitTimeDatas = UserWaitTimeAggregator.GetWaitTimeData();
+            _allWaitTimeData = UserWaitTimeAggregator.GetWaitTimeData();
             
             root.Clear();
             
@@ -61,7 +61,7 @@ namespace UnityEditorDevelopmentBenchmark.Editor
         {
             var table = new MultiColumnListView
             {
-                itemsSource = _waitTimeDatas,
+                itemsSource = _allWaitTimeData,
                 showBoundCollectionSize = false,
                 showAlternatingRowBackgrounds = AlternatingRowBackground.ContentOnly,
                 style = {flexGrow = 1}
@@ -75,7 +75,7 @@ namespace UnityEditorDevelopmentBenchmark.Editor
                 bindCell = (element, i) =>
                 {
                     var label = (Label) element;
-                    label.text = _waitTimeDatas[i].Name;
+                    label.text = _allWaitTimeData[i].Name;
                     label.style.paddingLeft = 8;
 
                     if (!label.text.Contains("Total"))
@@ -92,7 +92,7 @@ namespace UnityEditorDevelopmentBenchmark.Editor
                 makeCell = () => new Label(),
                 bindCell = (element, i) =>
                 {
-                    var text = CustomFormatTimeSpan(_waitTimeDatas[i].TotalWaitTime);
+                    var text = CustomFormatTimeSpan(_allWaitTimeData[i].TotalWaitTime);
                     CustomStyledLabel(element, text);
                 }
             });
@@ -105,7 +105,7 @@ namespace UnityEditorDevelopmentBenchmark.Editor
                 bindCell = (element, i) =>
                 {
                     var text =
-                        $"{_waitTimeDatas[i].TotalWaitTime.TotalMilliseconds / _waitTimeDatas.Last().TotalWaitTime.TotalMilliseconds:P1}";
+                        $"{_allWaitTimeData[i].TotalWaitTime.TotalMilliseconds / _allWaitTimeData.Last().TotalWaitTime.TotalMilliseconds:P1}";
                     CustomStyledLabel(element, text);
                 }
             });
@@ -115,7 +115,7 @@ namespace UnityEditorDevelopmentBenchmark.Editor
                 title = "Ratio (Total)",
                 width = 120,
                 makeCell = () => new ProgressBar(),
-                bindCell = (element, i) => ((ProgressBar) element).value = (float)(_waitTimeDatas[i].TotalWaitTime.TotalMilliseconds / _waitTimeDatas.Last().TotalWaitTime.TotalMilliseconds)*100f
+                bindCell = (element, i) => ((ProgressBar) element).value = (float)(_allWaitTimeData[i].TotalWaitTime.TotalMilliseconds / _allWaitTimeData.Last().TotalWaitTime.TotalMilliseconds)*100f
             });
             
             table.columns.Add(new Column
@@ -125,7 +125,7 @@ namespace UnityEditorDevelopmentBenchmark.Editor
                 makeCell = () => new Label(),
                 bindCell = (element, i) =>
                 {
-                    var text = CustomFormatTimeSpan(_waitTimeDatas[i].WaitTime);
+                    var text = CustomFormatTimeSpan(_allWaitTimeData[i].WaitTime);
                     CustomStyledLabel(element, text);
                 }
             });

@@ -15,6 +15,7 @@ namespace UnityEditorDevelopmentBenchmark.Editor
         private static readonly DomainReloadUserWaitTimeTracker _domainReloadUserWaitTimeTracker;
         private static readonly AssetImportUserWaitTimeTracker _assetImportUserWaitTimeTracker;
         private static readonly SwitchPlayModeUserWaitTimeTracker _switchPlayModeUserWaitTimeTracker;
+        private static readonly BuildUserWaitTimeTracker _buildUserWaitTimeTracker;
 
         static UserWaitTimeAggregator()
         {
@@ -22,11 +23,13 @@ namespace UnityEditorDevelopmentBenchmark.Editor
             _domainReloadUserWaitTimeTracker = new DomainReloadUserWaitTimeTracker();
             _assetImportUserWaitTimeTracker = new AssetImportUserWaitTimeTracker();
             _switchPlayModeUserWaitTimeTracker = new SwitchPlayModeUserWaitTimeTracker();
+            _buildUserWaitTimeTracker = new BuildUserWaitTimeTracker();
             
             _compilationUserWaitTimeTracker.UserWaited += OnCompilationUserWaitTimeTrackerOnUserWaited;
             _domainReloadUserWaitTimeTracker.UserWaited += OnCompilationUserWaitTimeTrackerOnUserWaited;
             _assetImportUserWaitTimeTracker.UserWaited += OnCompilationUserWaitTimeTrackerOnUserWaited;
             _switchPlayModeUserWaitTimeTracker.UserWaited += OnCompilationUserWaitTimeTrackerOnUserWaited;
+            _buildUserWaitTimeTracker.UserWaited += OnCompilationUserWaitTimeTrackerOnUserWaited;
         }
 
         private static void OnCompilationUserWaitTimeTrackerOnUserWaited(TimeSpan timeSpan)
@@ -41,7 +44,8 @@ namespace UnityEditorDevelopmentBenchmark.Editor
                 _compilationUserWaitTimeTracker.LastWaitTimeData,
                 _domainReloadUserWaitTimeTracker.LastWaitTimeData,
                 _assetImportUserWaitTimeTracker.LastWaitTimeData,
-                _switchPlayModeUserWaitTimeTracker.LastWaitTimeData
+                _switchPlayModeUserWaitTimeTracker.LastWaitTimeData,
+                _buildUserWaitTimeTracker.LastWaitTimeData
             };
             
             waitTimeData.Add(GetTotalWaitTimeData(waitTimeData));
@@ -63,6 +67,7 @@ namespace UnityEditorDevelopmentBenchmark.Editor
             _domainReloadUserWaitTimeTracker.ResetTotalWaitTime();
             _assetImportUserWaitTimeTracker.ResetTotalWaitTime();
             _switchPlayModeUserWaitTimeTracker.ResetTotalWaitTime();
+            _buildUserWaitTimeTracker.ResetTotalWaitTime();
             
             AnyWaitEventFired?.Invoke();
         }
