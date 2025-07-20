@@ -19,41 +19,14 @@ namespace UnityEditorDevelopmentBenchmark.Editor
         
         public void CreateGUI()
         {
-            // Each editor window contains a root VisualElement object
             var root = rootVisualElement;
             
-            // VisualElements objects can contain other VisualElement following a tree hierarchy
+            RefreshAndDrawData(root);
             
-            var refreshUIButton = new Button
-            {
-                name = "refreshUIButton",
-                text = "Refresh UI",
-                style = {maxWidth = new StyleLength(160)},
-            };            
-            
-            var resetTotalButton = new Button
-            {
-                name = "resetTotalButton",
-                text = "Reset Total",
-                style = {maxWidth = new StyleLength(160)},
-            };
-            
-            refreshUIButton.clicked += () =>
-            {
-                RefreshAndDrawData(root, refreshUIButton, resetTotalButton);
-            };
-            resetTotalButton.clicked += () =>
-            {
-                UserWaitTimeAggregator.Instance.ResetTotalWaitTime();
-            };
-            
-            RefreshAndDrawData(root, refreshUIButton, resetTotalButton);
-            
-            UserWaitTimeAggregator.Instance.AnyWaitEventFired += () => RefreshAndDrawData(root, refreshUIButton, resetTotalButton);
+            UserWaitTimeAggregator.Instance.AnyWaitEventFired += () => RefreshAndDrawData(root);
         }
 
-        private void RefreshAndDrawData(VisualElement root, VisualElement refreshUIButton,
-            VisualElement resetTotalButton)
+        private void RefreshAndDrawData(VisualElement root)
         {
             _waitTimeDatas = UserWaitTimeAggregator.Instance.GetWaitTimeData();
             
@@ -66,7 +39,19 @@ namespace UnityEditorDevelopmentBenchmark.Editor
                     flexDirection = FlexDirection.Row
                 }
             };
-            buttonRow.Add(refreshUIButton);
+            
+            var resetTotalButton = new Button
+            {
+                name = "resetTotalButton",
+                text = "Reset Total",
+                style = {maxWidth = new StyleLength(160)},
+            };
+            
+            resetTotalButton.clicked += () =>
+            {
+                UserWaitTimeAggregator.Instance.ResetTotalWaitTime();
+            };
+            
             buttonRow.Add(resetTotalButton);
 
             root.Add(buttonRow);
