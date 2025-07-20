@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 using UnityEditor;
 using UnityEngine;
@@ -69,7 +70,7 @@ namespace UnityEditorDevelopmentBenchmark.Editor
             table.columns.Add(new Column
             {
                 title = "Name",
-                width = 120,
+                width = 140,
                 makeCell = () => new Label(),
                 bindCell = (element, i) =>
                 {
@@ -83,23 +84,17 @@ namespace UnityEditorDevelopmentBenchmark.Editor
                     label.style.unityFontStyleAndWeight = FontStyle.Bold;
                 }
             });
-
-            table.columns.Add(new Column
-            {
-                title = "Last Wait Time [mm:ss.ff]",
-                width = 120,
-                makeCell = () => new Label(),
-                bindCell = (element, i) => ((Label) element).text =
-                    $@"{_waitTimeDatas[i].WaitTime:mm\:ss\.ff}"
-            });
             
             table.columns.Add(new Column
             {
-                title = "Total Wait Time [hh:mm:ss]",
+                title = "Total Wait Time",
                 width = 120,
                 makeCell = () => new Label(),
-                bindCell = (element, i) => ((Label) element).text =
-                    $@"{_waitTimeDatas[i].TotalWaitTime:hh\:mm\:ss}"
+                bindCell = (element, i) =>
+                {
+                    var text = CustomFormatTimeSpan(_waitTimeDatas[i].TotalWaitTime);
+                    CustomStyledLabel(element, text);
+                }
             });
             
             table.columns.Add(new Column
@@ -107,10 +102,13 @@ namespace UnityEditorDevelopmentBenchmark.Editor
                 title = "Ratio (Total)",
                 width = 120,
                 makeCell = () => new Label(),
-                bindCell = (element, i) => ((Label) element).text = 
-                    $"{_waitTimeDatas[i].TotalWaitTime.TotalMilliseconds / _waitTimeDatas.Last().TotalWaitTime.TotalMilliseconds:P1}"
+                bindCell = (element, i) =>
+                {
+                    var text =
+                        $"{_waitTimeDatas[i].TotalWaitTime.TotalMilliseconds / _waitTimeDatas.Last().TotalWaitTime.TotalMilliseconds:P1}";
+                    CustomStyledLabel(element, text);
+                }
             });
-            
             
             table.columns.Add(new Column
             {
@@ -119,8 +117,33 @@ namespace UnityEditorDevelopmentBenchmark.Editor
                 makeCell = () => new ProgressBar(),
                 bindCell = (element, i) => ((ProgressBar) element).value = (float)(_waitTimeDatas[i].TotalWaitTime.TotalMilliseconds / _waitTimeDatas.Last().TotalWaitTime.TotalMilliseconds)*100f
             });
+            
+            table.columns.Add(new Column
+            {
+                title = "Last Wait Time",
+                width = 120,
+                makeCell = () => new Label(),
+                bindCell = (element, i) =>
+                {
+                    var text = CustomFormatTimeSpan(_waitTimeDatas[i].WaitTime);
+                    CustomStyledLabel(element, text);
+                }
+            });
+
 
             root.Add(table);
+        }
+
+        private static void CustomStyledLabel(VisualElement element, string text)
+        {
+            var label = (Label) element;
+            label.style.paddingLeft = 8;
+            label.text = text;
+        }
+
+        private static string CustomFormatTimeSpan(TimeSpan waitTime)
+        {
+            return $"{waitTime.Hours}h {waitTime.Minutes}m {waitTime.Seconds}s";
         }
     }
 }
