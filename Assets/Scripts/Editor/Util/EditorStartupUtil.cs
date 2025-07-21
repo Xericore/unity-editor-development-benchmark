@@ -90,7 +90,9 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Util
         }
         
         /// <summary>
-        /// TODO: If Unity crashes, this method will not be called.
+        /// If Unity crashes, this method will not be called. This means that when Unity starts after a crash,
+        /// we lose the startup time for that startup event. But the next time after the user closes Unity
+        /// properly, this method will be called.
         /// </summary>
         private static void OnEditorQuitting()
         {
