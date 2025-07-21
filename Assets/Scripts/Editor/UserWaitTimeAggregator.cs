@@ -19,6 +19,7 @@ namespace UnityEditorDevelopmentBenchmark.Editor
         private static readonly SwitchPlayModeUserWaitTimeTracker _switchPlayModeUserWaitTimeTracker;
         private static readonly BuildUserWaitTimeTracker _buildUserWaitTimeTracker;
         private static readonly EditorStartupUserWaitTimeTracker _editorStartupUserWaitTimeTracker;
+        private static readonly LightmapBakingUserWaitTimeTracker _lightmapBakingUserWaitTimeTracker;
 
         static UserWaitTimeAggregator()
         {
@@ -28,6 +29,7 @@ namespace UnityEditorDevelopmentBenchmark.Editor
             _switchPlayModeUserWaitTimeTracker = new SwitchPlayModeUserWaitTimeTracker();
             _buildUserWaitTimeTracker = new BuildUserWaitTimeTracker();
             _editorStartupUserWaitTimeTracker = new EditorStartupUserWaitTimeTracker();
+            _lightmapBakingUserWaitTimeTracker = new LightmapBakingUserWaitTimeTracker();
             
             _compilationUserWaitTimeTracker.UserWaited += OnCompilationUserWaitTimeTrackerOnUserWaited;
             _domainReloadUserWaitTimeTracker.UserWaited += OnCompilationUserWaitTimeTrackerOnUserWaited;
@@ -35,6 +37,7 @@ namespace UnityEditorDevelopmentBenchmark.Editor
             _switchPlayModeUserWaitTimeTracker.UserWaited += OnCompilationUserWaitTimeTrackerOnUserWaited;
             _buildUserWaitTimeTracker.UserWaited += OnCompilationUserWaitTimeTrackerOnUserWaited;
             _editorStartupUserWaitTimeTracker.UserWaited += OnCompilationUserWaitTimeTrackerOnUserWaited;
+            _lightmapBakingUserWaitTimeTracker.UserWaited += OnCompilationUserWaitTimeTrackerOnUserWaited;
         }
 
         private static void OnCompilationUserWaitTimeTrackerOnUserWaited(TimeSpan timeSpan)
@@ -51,7 +54,8 @@ namespace UnityEditorDevelopmentBenchmark.Editor
                 _assetImportUserWaitTimeTracker.LastWaitTimeData,
                 _switchPlayModeUserWaitTimeTracker.LastWaitTimeData,
                 _buildUserWaitTimeTracker.LastWaitTimeData,
-                _editorStartupUserWaitTimeTracker.LastWaitTimeData
+                _editorStartupUserWaitTimeTracker.LastWaitTimeData,
+                _lightmapBakingUserWaitTimeTracker.LastWaitTimeData
             };
             
             waitTimeData.Add(GetTotalWaitTimeData(waitTimeData));
@@ -95,6 +99,7 @@ namespace UnityEditorDevelopmentBenchmark.Editor
             _switchPlayModeUserWaitTimeTracker.ResetTotalWaitTime();
             _buildUserWaitTimeTracker.ResetTotalWaitTime();
             _editorStartupUserWaitTimeTracker.ResetTotalWaitTime();
+            _lightmapBakingUserWaitTimeTracker.ResetTotalWaitTime();
             
             EditorPrefs.SetString(_lastResetTimeEditorPrefsKey, DateTime.Now.ToString("o"));
             
