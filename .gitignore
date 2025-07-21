@@ -76,3 +76,13 @@ crashlytics-build.properties
 *.idea/
 /Assets/TimeWaster
 /Assets/TimeWaster.meta
+
+*Lightmap*.png
+*Lightmap*.exr
+*Lightmap*.png.meta
+*Lightmap*.exr.meta
+
+LightingData.asset
+LightingData.asset.meta
+ReflectionProbe*.exr
+ReflectionProbe*.exr.meta
