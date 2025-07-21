@@ -69,8 +69,8 @@ namespace UnityEditorDevelopmentBenchmark.Editor
             
             table.columns.Add(new Column
             {
-                title = "Name",
-                width = 140,
+                title = "Category",
+                width = 200,
                 makeCell = () => new Label(),
                 bindCell = (element, i) =>
                 {

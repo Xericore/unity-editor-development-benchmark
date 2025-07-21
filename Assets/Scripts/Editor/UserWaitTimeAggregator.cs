@@ -11,6 +11,8 @@ namespace UnityEditorDevelopmentBenchmark.Editor
     {
         public static event Action AnyWaitEventFired;
         
+        private const string _lastResetTimeEditorPrefsKey = "UserWaitTimeAggregator_LastResetTime";
+        
         private static readonly CompilationUserWaitTimeTracker _compilationUserWaitTimeTracker;
         private static readonly DomainReloadUserWaitTimeTracker _domainReloadUserWaitTimeTracker;
         private static readonly AssetImportUserWaitTimeTracker _assetImportUserWaitTimeTracker;
@@ -62,9 +64,29 @@ namespace UnityEditorDevelopmentBenchmark.Editor
             var lastTotal = waitTimeData.Aggregate(TimeSpan.Zero, (current, data) => current + data.WaitTime);
             var totalTotal = waitTimeData.Aggregate(TimeSpan.Zero, (current, data) => current + data.TotalWaitTime);
 
-            return new UserWaitTimeData("Total", lastTotal, totalTotal);
+            if (!TryGetLastResetTime(out var lastResetTime))
+            {
+                lastResetTime = DateTime.Now;
+                EditorPrefs.SetString(_lastResetTimeEditorPrefsKey, lastResetTime.ToString("o"));
+            }
+            
+            return new UserWaitTimeData($"Total since {lastResetTime}", lastTotal, totalTotal);
         }
-        
+
+        private static bool TryGetLastResetTime(out DateTime lastResetTime)
+        {
+            var lastResetTimeString = EditorPrefs.GetString(_lastResetTimeEditorPrefsKey, null);
+            
+            lastResetTime = DateTime.MinValue;
+            
+            if (string.IsNullOrEmpty(lastResetTimeString))
+            {
+                return false;
+            }
+
+            return DateTime.TryParse(lastResetTimeString, out lastResetTime);
+        }
+
         public static void ResetTotalWaitTime()
         {
             _compilationUserWaitTimeTracker.ResetTotalWaitTime();
@@ -73,6 +95,8 @@ namespace UnityEditorDevelopmentBenchmark.Editor
             _switchPlayModeUserWaitTimeTracker.ResetTotalWaitTime();
             _buildUserWaitTimeTracker.ResetTotalWaitTime();
             _editorStartupUserWaitTimeTracker.ResetTotalWaitTime();
+            
+            EditorPrefs.SetString(_lastResetTimeEditorPrefsKey, DateTime.Now.ToString("o"));
             
             AnyWaitEventFired?.Invoke();
         }
