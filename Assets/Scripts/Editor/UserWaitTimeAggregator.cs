@@ -13,6 +13,10 @@ namespace UnityEditorDevelopmentBenchmark.Editor
         
         private const string _lastResetTimeEditorPrefsKey = "UserWaitTimeAggregator_LastResetTime";
         
+        // While a long list of fields doesn't look great, it allows us to control the order of initialization
+        // and ensures that all trackers are initialized before any events are fired.
+        // Putting [InitializeOnLoad] on each tracker would not guarantee the order of initialization, and also
+        // not allow us to have the abstract base class, since [InitializeOnLoad] can only be used on static classes.
         private static readonly CompilationUserWaitTimeTracker _compilationUserWaitTimeTracker;
         private static readonly DomainReloadUserWaitTimeTracker _domainReloadUserWaitTimeTracker;
         private static readonly AssetImportUserWaitTimeTracker _assetImportUserWaitTimeTracker;
@@ -49,13 +53,13 @@ namespace UnityEditorDevelopmentBenchmark.Editor
         {
             var waitTimeData = new List<UserWaitTimeData>
             {
+                _editorStartupUserWaitTimeTracker.LastWaitTimeData,
+                _assetImportUserWaitTimeTracker.LastWaitTimeData,
                 _compilationUserWaitTimeTracker.LastWaitTimeData,
                 _domainReloadUserWaitTimeTracker.LastWaitTimeData,
-                _assetImportUserWaitTimeTracker.LastWaitTimeData,
+                _lightmapBakingUserWaitTimeTracker.LastWaitTimeData,
                 _switchPlayModeUserWaitTimeTracker.LastWaitTimeData,
-                _buildUserWaitTimeTracker.LastWaitTimeData,
-                _editorStartupUserWaitTimeTracker.LastWaitTimeData,
-                _lightmapBakingUserWaitTimeTracker.LastWaitTimeData
+                _buildUserWaitTimeTracker.LastWaitTimeData
             };
             
             waitTimeData.Add(GetTotalWaitTimeData(waitTimeData));
