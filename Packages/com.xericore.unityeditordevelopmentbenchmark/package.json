@@ -1,0 +1,24 @@
+{
+  "name": "com.xericore.unityeditordevelopmentbenchmark",
+  "version": "1.0.0",
+  "displayName": "Unity Editor Development Benchmark",
+  "description": "Measure how well your machine is suited for Unity development.",
+  "unity": "6000.0",
+  "unityRelease": "46f1",
+  "documentationUrl": "https://github.com/Xericore/unity-editor-development-benchmark",
+  "changelogUrl": "https://github.com/Xericore/unity-editor-development-benchmark/commits/main/",
+  "licensesUrl": "https://github.com/Xericore/unity-editor-development-benchmark?tab=MIT-1-ov-file#readme",
+  "keywords": [
+    "Benchmark",
+    "Measure",
+    "Time",
+    "Unity",
+    "Tools"
+  ],
+  "author": {
+    "name": "Xericore",
+    "url": "https://www.adesso-mobile.de"
+  },
+  "type": "library",
+  "hideInEditor": false
+}
