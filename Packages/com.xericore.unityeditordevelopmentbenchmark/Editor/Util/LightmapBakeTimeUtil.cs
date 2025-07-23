@@ -17,7 +17,9 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Util
             
             Lightmapping.bakeStarted += OnBakeStarted;
             Lightmapping.bakeCompleted += OnBakeCompleted;
+#if UNITY_2023_1_OR_NEWER
             Lightmapping.bakeCancelled += OnBakeCompleted;
+#endif
         }
 
         private static void OnBakeStarted()
