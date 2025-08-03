@@ -87,6 +87,36 @@ namespace UnityEditorDevelopmentBenchmark.Editor
             
             table.columns.Add(new Column
             {
+                title = "Last Wait Time",
+                width = 120,
+                makeCell = () => new Label(),
+                bindCell = (element, i) =>
+                {
+                    var text = CustomFormatTimeSpan(_allWaitTimeData[i].WaitTime);
+                    CustomStyledLabel(element, text);
+                }
+            });
+            
+            table.columns.Add(new Column
+            {
+                title = "Ratio (Total)",
+                width = 120,
+                makeCell = () => new ProgressBar(),
+                bindCell = (element, i) =>
+                {
+                    var progressBar = ((ProgressBar) element);
+                    progressBar.value = (float) (_allWaitTimeData[i].TotalWaitTime.TotalMilliseconds /
+                                                 _allWaitTimeData.Last().TotalWaitTime
+                                                     .TotalMilliseconds) * 100f;
+
+                    var percentage =
+                        $"{_allWaitTimeData[i].TotalWaitTime.TotalMilliseconds / _allWaitTimeData.Last().TotalWaitTime.TotalMilliseconds:P1}";
+                    progressBar.title = percentage;
+                }
+            });
+            
+            table.columns.Add(new Column
+            {
                 title = "Total Wait Time",
                 width = 120,
                 makeCell = () => new Label(),
@@ -97,40 +127,6 @@ namespace UnityEditorDevelopmentBenchmark.Editor
                 }
             });
             
-            table.columns.Add(new Column
-            {
-                title = "Ratio (Total)",
-                width = 120,
-                makeCell = () => new Label(),
-                bindCell = (element, i) =>
-                {
-                    var text =
-                        $"{_allWaitTimeData[i].TotalWaitTime.TotalMilliseconds / _allWaitTimeData.Last().TotalWaitTime.TotalMilliseconds:P1}";
-                    CustomStyledLabel(element, text);
-                }
-            });
-            
-            table.columns.Add(new Column
-            {
-                title = "Ratio (Total)",
-                width = 120,
-                makeCell = () => new ProgressBar(),
-                bindCell = (element, i) => ((ProgressBar) element).value = (float)(_allWaitTimeData[i].TotalWaitTime.TotalMilliseconds / _allWaitTimeData.Last().TotalWaitTime.TotalMilliseconds)*100f
-            });
-            
-            table.columns.Add(new Column
-            {
-                title = "Last Wait Time",
-                width = 120,
-                makeCell = () => new Label(),
-                bindCell = (element, i) =>
-                {
-                    var text = CustomFormatTimeSpan(_allWaitTimeData[i].WaitTime);
-                    CustomStyledLabel(element, text);
-                }
-            });
-
-
             root.Add(table);
         }
 
