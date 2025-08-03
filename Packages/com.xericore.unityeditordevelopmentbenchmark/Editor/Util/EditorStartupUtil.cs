@@ -10,6 +10,8 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Util
     public static class EditorStartupUtil
     {
         public static event Action<TimeSpan> UserWaited;
+
+        public static TimeSpan LastStartupDuration { get; private set; }
         
         private const string _editorStartupUtilSessionStartedKey = "EditorStartupUtil_SessionStarted";
         
@@ -47,6 +49,8 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Util
             var startupTime = GetUtcStartupTimeFromEditorLog();
 
             var startupDuration = DateTime.Now - startupTime;
+
+            LastStartupDuration = startupDuration;
 
             UserWaited?.Invoke(startupDuration);
         }
