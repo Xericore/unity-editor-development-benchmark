@@ -1,0 +1,1 @@
+"C:\Program Files\Unity\Hub\Editor\2022.3.64f1\Editor\Unity.exe" -projectPath .\ -executeMethod UnityEditorDevelopmentBenchmark.Editor.BenchmarkRunner.StartBenchmark
