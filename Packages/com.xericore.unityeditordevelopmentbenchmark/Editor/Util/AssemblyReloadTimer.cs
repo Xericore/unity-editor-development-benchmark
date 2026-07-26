@@ -34,6 +34,16 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Util
 
             var compilationData = CompilationData.GetAll();
 
+            if (compilationData?.iterations == null || compilationData.iterations.Count == 0)
+            {
+                // Can happen if Library/Bee/fullprofile.json wasn't available/parseable yet (e.g. another
+                // compilation was requested again shortly after this one finished, before we got a chance to read
+                // it), or if the trace didn't contain any usable compilation events. CompilationData.GetAll()
+                // already logs details in that case, so just skip reporting this occurrence.
+                Debug.LogWarning("Couldn't get compilation data; skipping this assembly reload duration report.");
+                return;
+            }
+
             AssemblyReloadDuration = compilationData.iterations
                 .Select(item => item.AfterAssemblyReload - item.BeforeAssemblyReload)
                 .Aggregate((result, item) => result + item);

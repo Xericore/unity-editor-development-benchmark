@@ -7,8 +7,9 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
     /// already tracked live by the <see cref="UserWaitTimeTrackerBase"/> subclasses in this namespace.
     /// </summary>
     /// <remarks>
-    /// Only <see cref="PlayModeSwitch"/> is currently driven by <see cref="BenchmarkRunner"/>. The remaining
-    /// values are stubs for categories the benchmark does not yet exercise.
+    /// <see cref="PlayModeSwitch"/>, <see cref="Compilation"/> and <see cref="AssetImport"/> are currently driven
+    /// by <see cref="BenchmarkRunner"/>. The remaining values are stubs for categories the benchmark does not
+    /// yet exercise.
     /// </remarks>
     public enum BenchmarkCategory
     {
@@ -18,7 +19,7 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
         PlayModeSwitch,
 
         /// <summary>
-        /// Stub. Not yet driven by <see cref="BenchmarkRunner"/>.
+        /// Time spent forcing full script recompilations. Implemented, driven by <see cref="BenchmarkRunner"/>.
         /// </summary>
         Compilation,
 
@@ -28,7 +29,8 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
         DomainReload,
 
         /// <summary>
-        /// Stub. Not yet driven by <see cref="BenchmarkRunner"/>.
+        /// Time spent forcing full reimports of everything under the "Assets" folder (never "Packages").
+        /// Implemented, driven by <see cref="BenchmarkRunner"/>.
         /// </summary>
         AssetImport,
 
