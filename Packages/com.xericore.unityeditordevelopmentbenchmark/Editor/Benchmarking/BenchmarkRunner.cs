@@ -1,9 +1,7 @@
-﻿using System;
-using System.Globalization;
+﻿using System.Globalization;
 using System.Reflection;
 using JetBrains.Annotations;
 using UnityEditor;
-using UnityEditorDevelopmentBenchmark.Editor.Util;
 using Debug = UnityEngine.Debug;
 
 namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
@@ -35,7 +33,6 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
 
         private const string _stateKey = "UnityEditorDevelopmentBenchmark.BenchmarkRunner.State";
         private const string _phaseStartTimeKey = "UnityEditorDevelopmentBenchmark.BenchmarkRunner.PhaseStartTime";
-        private const string _benchmarkStartTimeKey = "UnityEditorDevelopmentBenchmark.BenchmarkRunner.BenchmarkStartTime";
         private const string _playModeSwitchCountKey = "UnityEditorDevelopmentBenchmark.BenchmarkRunner.PlayModeSwitchCount";
         private const string _playModeSwitchIterationKey = "UnityEditorDevelopmentBenchmark.BenchmarkRunner.PlayModeSwitchIteration";
 
@@ -98,7 +95,6 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
             SetPlayModeSwitchIteration(0);
 
             SetState(BenchmarkState.WaitingForCompilation);
-            SetBenchmarkStartTime(EditorApplication.timeSinceStartup);
 
             EditorApplication.update += Step;
         }
@@ -207,8 +203,7 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
                 return;
             }
 
-            var totalDuration = TimeSpan.FromSeconds(EditorApplication.timeSinceStartup - GetBenchmarkStartTime())
-                                 + EditorStartupUtil.LastStartupDuration;
+            var totalDuration = BenchmarkCategoryTimeTracker.GetTotalDurationFromAllCategories();
 
             Debug.Log("<color=red>Finished benchmark...</color>");
             Debug.Log($"Benchmark total time: {totalDuration}");
@@ -261,16 +256,6 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
         private static void SetPhaseStartTime(double time)
         {
             SessionState.SetString(_phaseStartTimeKey, time.ToString(CultureInfo.InvariantCulture));
-        }
-
-        private static double GetBenchmarkStartTime()
-        {
-            return double.Parse(SessionState.GetString(_benchmarkStartTimeKey, "0"), CultureInfo.InvariantCulture);
-        }
-
-        private static void SetBenchmarkStartTime(double time)
-        {
-            SessionState.SetString(_benchmarkStartTimeKey, time.ToString(CultureInfo.InvariantCulture));
         }
 
         private static int GetPlayModeSwitchCount()

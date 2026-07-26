@@ -71,6 +71,24 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
         }
 
         /// <summary>
+        /// Sum of <see cref="GetTotal"/> across every <see cref="BenchmarkCategory"/>. This is the authoritative
+        /// total duration for a benchmark run; callers must not derive it independently (e.g. from wall-clock time
+        /// between start and end), since that would also include untracked phases (such as waiting for
+        /// compilation before the first category starts) and silently diverge from the sum of the categories.
+        /// </summary>
+        public static TimeSpan GetTotalDurationFromAllCategories()
+        {
+            var total = TimeSpan.Zero;
+
+            foreach (var categoryTotal in GetAllTotals().Values)
+            {
+                total += categoryTotal;
+            }
+
+            return total;
+        }
+
+        /// <summary>
         /// Clears the recorded total (and any in-progress start time) for <paramref name="category"/>.
         /// </summary>
         public static void Reset(BenchmarkCategory category)
