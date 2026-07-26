@@ -1,11 +1,12 @@
-﻿using System.Globalization;
+﻿using System;
+using System.Globalization;
 using System.Reflection;
 using JetBrains.Annotations;
 using UnityEditor;
 using UnityEditorDevelopmentBenchmark.Editor.Util;
 using Debug = UnityEngine.Debug;
 
-namespace UnityEditorDevelopmentBenchmark.Editor
+namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
 {
     /// <summary>
     /// To be called from the command line.
@@ -35,6 +36,10 @@ namespace UnityEditorDevelopmentBenchmark.Editor
         private const string _stateKey = "UnityEditorDevelopmentBenchmark.BenchmarkRunner.State";
         private const string _phaseStartTimeKey = "UnityEditorDevelopmentBenchmark.BenchmarkRunner.PhaseStartTime";
         private const string _benchmarkStartTimeKey = "UnityEditorDevelopmentBenchmark.BenchmarkRunner.BenchmarkStartTime";
+        private const string _playModeSwitchCountKey = "UnityEditorDevelopmentBenchmark.BenchmarkRunner.PlayModeSwitchCount";
+        private const string _playModeSwitchIterationKey = "UnityEditorDevelopmentBenchmark.BenchmarkRunner.PlayModeSwitchIteration";
+
+        private const int _defaultPlayModeSwitchCount = 3;
 
         private const float _maxLoopTimeInSeconds = 10f;
         private const float _preparationDelayInSeconds = 1f;
@@ -53,6 +58,16 @@ namespace UnityEditorDevelopmentBenchmark.Editor
         [UsedImplicitly]
         public static void StartBenchmark()
         {
+            StartBenchmark(_defaultPlayModeSwitchCount);
+        }
+
+        /// <param name="playModeSwitchCount">
+        /// How many times to enter and exit play mode. Defaults to 3 when invoked from the menu; pass explicitly
+        /// when invoking from the command line via -executeMethod.
+        /// </param>
+        [UsedImplicitly]
+        public static void StartBenchmark(int playModeSwitchCount)
+        {
             if (EditorApplication.isPlayingOrWillChangePlaymode)
             {
                 Debug.LogWarning("Cannot start benchmark while in play mode.");
@@ -65,12 +80,22 @@ namespace UnityEditorDevelopmentBenchmark.Editor
                 return;
             }
 
+            if (playModeSwitchCount < 1)
+            {
+                Debug.LogWarning($"playModeSwitchCount must be at least 1, got {playModeSwitchCount}. Using 1 instead.");
+                playModeSwitchCount = 1;
+            }
+
             if (!TryDisableConsoleClearOnPlay())
             {
                 Debug.LogWarning("Couldn't disable console clear on play. This may cause the benchmark to not show all logs. Please disable it manually in the Console window settings.");
             }
 
-            Debug.Log("<color=lime>Starting benchmark...</color>");
+            Debug.Log($"<color=lime>Starting benchmark ({playModeSwitchCount} play mode switch(es))...</color>");
+
+            BenchmarkCategoryTimeTracker.Reset(BenchmarkCategory.PlayModeSwitch);
+            SetPlayModeSwitchCount(playModeSwitchCount);
+            SetPlayModeSwitchIteration(0);
 
             SetState(BenchmarkState.WaitingForCompilation);
             SetBenchmarkStartTime(EditorApplication.timeSinceStartup);
@@ -129,6 +154,7 @@ namespace UnityEditorDevelopmentBenchmark.Editor
                 return;
             }
 
+            BenchmarkCategoryTimeTracker.Start(BenchmarkCategory.PlayModeSwitch);
             EditorApplication.EnterPlaymode();
 
             TransitionTo(BenchmarkState.WaitingForPlayMode);
@@ -167,13 +193,30 @@ namespace UnityEditorDevelopmentBenchmark.Editor
                 return;
             }
 
-            Debug.Log("Exited play mode.");
+            var switchElapsed = BenchmarkCategoryTimeTracker.Stop(BenchmarkCategory.PlayModeSwitch);
 
-            var totalDuration = System.TimeSpan.FromSeconds(EditorApplication.timeSinceStartup - GetBenchmarkStartTime())
+            var iteration = GetPlayModeSwitchIteration() + 1;
+            var count = GetPlayModeSwitchCount();
+            SetPlayModeSwitchIteration(iteration);
+
+            Debug.Log($"Exited play mode ({iteration}/{count}), took {switchElapsed}.");
+
+            if (iteration < count)
+            {
+                TransitionTo(BenchmarkState.Preparing);
+                return;
+            }
+
+            var totalDuration = TimeSpan.FromSeconds(EditorApplication.timeSinceStartup - GetBenchmarkStartTime())
                                  + EditorStartupUtil.LastStartupDuration;
 
             Debug.Log("<color=red>Finished benchmark...</color>");
             Debug.Log($"Benchmark total time: {totalDuration}");
+
+            foreach (var (category, total) in BenchmarkCategoryTimeTracker.GetAllTotals())
+            {
+                Debug.Log($"  {category}: {total}");
+            }
 
             Finish();
         }
@@ -228,6 +271,26 @@ namespace UnityEditorDevelopmentBenchmark.Editor
         private static void SetBenchmarkStartTime(double time)
         {
             SessionState.SetString(_benchmarkStartTimeKey, time.ToString(CultureInfo.InvariantCulture));
+        }
+
+        private static int GetPlayModeSwitchCount()
+        {
+            return SessionState.GetInt(_playModeSwitchCountKey, _defaultPlayModeSwitchCount);
+        }
+
+        private static void SetPlayModeSwitchCount(int count)
+        {
+            SessionState.SetInt(_playModeSwitchCountKey, count);
+        }
+
+        private static int GetPlayModeSwitchIteration()
+        {
+            return SessionState.GetInt(_playModeSwitchIterationKey, 0);
+        }
+
+        private static void SetPlayModeSwitchIteration(int iteration)
+        {
+            SessionState.SetInt(_playModeSwitchIterationKey, iteration);
         }
 
         private static bool TryDisableConsoleClearOnPlay()
