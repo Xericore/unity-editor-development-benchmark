@@ -1,7 +1,12 @@
-﻿using System.Globalization;
+﻿using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
 using System.Reflection;
+using System.Text;
 using JetBrains.Annotations;
 using UnityEditor;
+using UnityEngine;
 using Debug = UnityEngine.Debug;
 
 namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
@@ -207,13 +212,42 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
 
             Debug.Log("<color=red>Finished benchmark...</color>");
             Debug.Log($"Benchmark total time: {totalDuration}");
-
-            foreach (var (category, total) in BenchmarkCategoryTimeTracker.GetAllTotals())
-            {
-                Debug.Log($"  {category}: {total}");
-            }
+            Debug.Log(BuildCategoryBreakdownLog(BenchmarkCategoryTimeTracker.GetAllTotals()));
 
             Finish();
+        }
+
+        private static string BuildCategoryBreakdownLog(IReadOnlyDictionary<BenchmarkCategory, TimeSpan> totals)
+        {
+            var minSeconds = totals.Values.Min(t => t.TotalSeconds);
+            var maxSeconds = totals.Values.Max(t => t.TotalSeconds);
+
+            var builder = new StringBuilder();
+            builder.AppendLine("Category breakdown:");
+
+            foreach (var (category, total) in totals.OrderByDescending(pair => pair.Value))
+            {
+                var color = GetDurationColor(total.TotalSeconds, minSeconds, maxSeconds);
+                var colorHex = ColorUtility.ToHtmlStringRGB(color);
+                builder.AppendLine($"  <color=#{colorHex}>{category,-16} {total:hh\\:mm\\:ss\\.fff}</color>");
+            }
+
+            return builder.ToString();
+        }
+
+        /// <summary>
+        /// Lerps from green (shortest of the given categories) to red (longest), so durations can be compared
+        /// visually relative to each other rather than against a fixed absolute scale.
+        /// </summary>
+        private static Color GetDurationColor(double seconds, double minSeconds, double maxSeconds)
+        {
+            if (Mathf.Approximately((float) minSeconds, (float) maxSeconds))
+            {
+                return Color.green;
+            }
+
+            var t = (float) ((seconds - minSeconds) / (maxSeconds - minSeconds));
+            return Color.Lerp(Color.green, Color.red, t);
         }
 
         private static void TransitionTo(BenchmarkState state)
