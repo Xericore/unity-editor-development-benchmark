@@ -536,6 +536,14 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
                 AssetDatabase.DeleteAsset(tempFolderPath);
             }
 
+            // Also remove the parent "Assets/Temp" folder (and its .meta) if we're the ones who created it and
+            // nothing else has since put anything else in there, so it doesn't linger behind after the benchmark.
+            var parentTempFolderPath = _assetsFolderPath + "/Temp";
+            if (AssetDatabase.IsValidFolder(parentTempFolderPath) && IsFolderEmpty(parentTempFolderPath))
+            {
+                AssetDatabase.DeleteAsset(parentTempFolderPath);
+            }
+
             AssetDatabase.Refresh();
         }
 
@@ -552,6 +560,20 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
             }
 
             return _lightmapBenchmarkTempFolderPath;
+        }
+
+        /// <summary>
+        /// Whether <paramref name="assetsRelativeFolderPath"/> (a folder path relative to the project, e.g.
+        /// "Assets/Temp") contains no files or subfolders. Checked directly on disk rather than via
+        /// <see cref="AssetDatabase"/>, since an empty folder is still a valid tracked asset (with its own
+        /// .meta file) but wouldn't be returned by an asset search under itself.
+        /// </summary>
+        private static bool IsFolderEmpty(string assetsRelativeFolderPath)
+        {
+            var relativeToAssets = assetsRelativeFolderPath.Substring(_assetsFolderPath.Length).TrimStart('/', '\\');
+            var absolutePath = Path.Combine(Application.dataPath, relativeToAssets);
+
+            return !Directory.Exists(absolutePath) || Directory.GetFileSystemEntries(absolutePath).Length == 0;
         }
 
         /// <summary>
@@ -695,7 +717,7 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
             var builder = new StringBuilder();
             builder.AppendLine("Category breakdown:");
 
-            foreach (var (category, total) in totals.OrderByDescending(pair => pair.Value))
+            foreach (var (category, total) in totals.OrderBy(pair => pair.Key.ToString()))
             {
                 var color = GetDurationColor(total.TotalSeconds, minSeconds, maxSeconds);
                 var colorHex = ColorUtility.ToHtmlStringRGB(color);
