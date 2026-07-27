@@ -1,9 +1,10 @@
 using System.Collections.Generic;
 using UnityEditor;
 using UnityEditor.UIElements;
+using UnityEngine;
 using UnityEngine.UIElements;
 
-namespace UnityEditorDevelopmentBenchmark.Editor.Settings
+namespace UnityEditorDevelopmentBenchmark.Editor
 {
     /// <summary>
     /// Registers the "Development Benchmark" page under Project Settings, backed by
@@ -27,7 +28,13 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Settings
                     };
                     rootElement.Add(root);
 
-                    // Settings fields will be added here as they are defined.
+                    var lightmapBenchmarkSceneField = new ObjectField("Lightmap Benchmark Scene")
+                    {
+                        objectType = typeof(SceneAsset),
+                        allowSceneObjects = false,
+                        bindingPath = "_lightmapBenchmarkScene"
+                    };
+                    root.Add(lightmapBenchmarkSceneField);
 
                     root.Bind(settings);
 

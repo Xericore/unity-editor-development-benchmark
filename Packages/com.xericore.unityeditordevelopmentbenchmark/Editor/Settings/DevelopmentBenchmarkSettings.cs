@@ -14,6 +14,11 @@ namespace UnityEditorDevelopmentBenchmark.Editor
     {
         private const string SettingsPath = "ProjectSettings/DevelopmentBenchmarkSettings.asset";
 
+        [SerializeField]
+        private SceneAsset _lightmapBenchmarkScene;
+
+        public SceneAsset LightmapBenchmarkScene => _lightmapBenchmarkScene;
+
         private static DevelopmentBenchmarkSettings _instance;
 
         public static DevelopmentBenchmarkSettings GetOrCreateSettings()
