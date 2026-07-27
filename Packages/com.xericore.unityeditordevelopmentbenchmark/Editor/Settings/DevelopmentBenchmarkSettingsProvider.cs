@@ -1,7 +1,6 @@
 using System.Collections.Generic;
 using UnityEditor;
 using UnityEditor.UIElements;
-using UnityEngine;
 using UnityEngine.UIElements;
 
 namespace UnityEditorDevelopmentBenchmark.Editor
@@ -20,7 +19,7 @@ namespace UnityEditorDevelopmentBenchmark.Editor
                 label = "Development Benchmark",
                 activateHandler = (searchContext, rootElement) =>
                 {
-                    var settings = DevelopmentBenchmarkSettings.GetSerializedSettings();
+                    var settings = DevelopmentBenchmarkSettings.GetOrCreateSettings();
 
                     var root = new VisualElement
                     {
@@ -32,13 +31,21 @@ namespace UnityEditorDevelopmentBenchmark.Editor
                     {
                         objectType = typeof(SceneAsset),
                         allowSceneObjects = false,
-                        bindingPath = "_lightmapBenchmarkScene"
+                        value = settings.LightmapBenchmarkScene
                     };
+
+                    // Read/write the settings object directly rather than going through a SerializedObject/Bind,
+                    // whose binding system applies changes to the backing property on a scheduled tick rather
+                    // than synchronously with the field's ChangeEvent. That would risk saving a stale value if a
+                    // domain reload (e.g. one triggered by starting a benchmark run) happened to land between the
+                    // user's edit and the next binding tick.
+                    lightmapBenchmarkSceneField.RegisterValueChangedCallback(evt =>
+                    {
+                        settings.LightmapBenchmarkScene = (SceneAsset) evt.newValue;
+                        DevelopmentBenchmarkSettings.Save();
+                    });
+
                     root.Add(lightmapBenchmarkSceneField);
-
-                    root.Bind(settings);
-
-                    root.RegisterCallback<SerializedPropertyChangeEvent>(_ => DevelopmentBenchmarkSettings.Save());
                 },
                 keywords = new HashSet<string>(new[] { "Development", "Benchmark", "Wait Time" })
             };

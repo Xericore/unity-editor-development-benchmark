@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Text;
@@ -40,6 +41,9 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
             PreparingAssetImport,
             RequestingAssetImport,
             WaitingForAssetImportToSettle,
+            PreparingLightmapBake,
+            RequestingLightmapBake,
+            CleaningUpLightmapBake,
             Preparing,
             WaitingForPlayMode,
             WaitingForExitPlayMode
@@ -54,12 +58,18 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
         private const string _assetImportRunCountKey = "UnityEditorDevelopmentBenchmark.BenchmarkRunner.AssetImportRunCount";
         private const string _assetImportRunIterationKey = "UnityEditorDevelopmentBenchmark.BenchmarkRunner.AssetImportRunIteration";
         private const string _originalScenePathsKey = "UnityEditorDevelopmentBenchmark.BenchmarkRunner.OriginalScenePaths";
+        private const string _lightmapBakeRunCountKey = "UnityEditorDevelopmentBenchmark.BenchmarkRunner.LightmapBakeRunCount";
+        private const string _lightmapBakeRunIterationKey = "UnityEditorDevelopmentBenchmark.BenchmarkRunner.LightmapBakeRunIteration";
+        private const string _lightmapOriginalScenePathsKey = "UnityEditorDevelopmentBenchmark.BenchmarkRunner.LightmapOriginalScenePaths";
+        private const string _lightmapTempFolderPathKey = "UnityEditorDevelopmentBenchmark.BenchmarkRunner.LightmapTempFolderPath";
 
         private const int _defaultPlayModeSwitchCount = 3;
         private const int _defaultCompilationRunCount = 3;
         private const int _defaultAssetImportRunCount = 3;
+        private const int _defaultLightmapBakeRunCount = 2;
 
         private const string _assetsFolderPath = "Assets";
+        private const string _lightmapBenchmarkTempFolderPath = "Assets/Temp/LightmapBenchmarkTemp";
 
         private const float _maxLoopTimeInSeconds = 10f;
         private const float _preparationDelayInSeconds = 1f;
@@ -78,7 +88,8 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
         [UsedImplicitly]
         public static void StartBenchmark()
         {
-            StartBenchmark(_defaultPlayModeSwitchCount, _defaultCompilationRunCount, _defaultAssetImportRunCount);
+            StartBenchmark(_defaultPlayModeSwitchCount, _defaultCompilationRunCount, _defaultAssetImportRunCount,
+                _defaultLightmapBakeRunCount);
         }
 
         /// <param name="playModeSwitchCount">
@@ -88,7 +99,8 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
         [UsedImplicitly]
         public static void StartBenchmark(int playModeSwitchCount)
         {
-            StartBenchmark(playModeSwitchCount, _defaultCompilationRunCount, _defaultAssetImportRunCount);
+            StartBenchmark(playModeSwitchCount, _defaultCompilationRunCount, _defaultAssetImportRunCount,
+                _defaultLightmapBakeRunCount);
         }
 
         /// <param name="playModeSwitchCount">
@@ -103,7 +115,8 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
         [UsedImplicitly]
         public static void StartBenchmark(int playModeSwitchCount, int compilationRunCount)
         {
-            StartBenchmark(playModeSwitchCount, compilationRunCount, _defaultAssetImportRunCount);
+            StartBenchmark(playModeSwitchCount, compilationRunCount, _defaultAssetImportRunCount,
+                _defaultLightmapBakeRunCount);
         }
 
         /// <param name="playModeSwitchCount">
@@ -121,6 +134,32 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
         /// </param>
         [UsedImplicitly]
         public static void StartBenchmark(int playModeSwitchCount, int compilationRunCount, int assetImportRunCount)
+        {
+            StartBenchmark(playModeSwitchCount, compilationRunCount, assetImportRunCount,
+                _defaultLightmapBakeRunCount);
+        }
+
+        /// <param name="playModeSwitchCount">
+        /// How many times to enter and exit play mode. Defaults to 3 when invoked from the menu; pass explicitly
+        /// when invoking from the command line via -executeMethod.
+        /// </param>
+        /// <param name="compilationRunCount">
+        /// How many times to force a full script recompilation (via
+        /// <see cref="CompilationPipeline.RequestScriptCompilation()"/> with
+        /// <see cref="RequestScriptCompilationOptions.CleanBuildCache"/> where available). Defaults to 3.
+        /// </param>
+        /// <param name="assetImportRunCount">
+        /// How many times to force a full reimport of everything under the "Assets" folder (never "Packages").
+        /// Defaults to 3.
+        /// </param>
+        /// <param name="lightmapBakeRunCount">
+        /// How many times to bake lightmaps for the scene assigned to "Lightmap Benchmark Scene" in
+        /// Project Settings &gt; Development Benchmark. Defaults to 2. Ignored (the category is skipped) if no
+        /// scene is assigned.
+        /// </param>
+        [UsedImplicitly]
+        public static void StartBenchmark(int playModeSwitchCount, int compilationRunCount, int assetImportRunCount,
+            int lightmapBakeRunCount)
         {
             if (EditorApplication.isPlayingOrWillChangePlaymode)
             {
@@ -152,16 +191,23 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
                 assetImportRunCount = 1;
             }
 
+            if (lightmapBakeRunCount < 1)
+            {
+                Debug.LogWarning($"lightmapBakeRunCount must be at least 1, got {lightmapBakeRunCount}. Using 1 instead.");
+                lightmapBakeRunCount = 1;
+            }
+
             if (!TryDisableConsoleClearOnPlay())
             {
                 Debug.LogWarning("Couldn't disable console clear on play. This may cause the benchmark to not show all logs. Please disable it manually in the Console window settings.");
             }
 
-            Debug.Log($"<color=lime>Starting benchmark ({compilationRunCount} compilation run(s), {assetImportRunCount} asset import run(s), {playModeSwitchCount} play mode switch(es))...</color>");
+            Debug.Log($"<color=lime>Starting benchmark ({compilationRunCount} compilation run(s), {assetImportRunCount} asset import run(s), {lightmapBakeRunCount} lightmap bake run(s), {playModeSwitchCount} play mode switch(es))...</color>");
 
             BenchmarkCategoryTimeTracker.Reset(BenchmarkCategory.PlayModeSwitch);
             BenchmarkCategoryTimeTracker.Reset(BenchmarkCategory.Compilation);
             BenchmarkCategoryTimeTracker.Reset(BenchmarkCategory.AssetImport);
+            BenchmarkCategoryTimeTracker.Reset(BenchmarkCategory.LightmapBaking);
 
             SetPlayModeSwitchCount(playModeSwitchCount);
             SetPlayModeSwitchIteration(0);
@@ -171,6 +217,9 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
 
             SetAssetImportRunCount(assetImportRunCount);
             SetAssetImportRunIteration(0);
+
+            SetLightmapBakeRunCount(lightmapBakeRunCount);
+            SetLightmapBakeRunIteration(0);
 
             SetState(BenchmarkState.WaitingForInitialCompilation);
 
@@ -211,6 +260,18 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
 
                 case BenchmarkState.WaitingForAssetImportToSettle:
                     StepWaitingForAssetImportToSettle();
+                    break;
+
+                case BenchmarkState.PreparingLightmapBake:
+                    StepPreparingLightmapBake();
+                    break;
+
+                case BenchmarkState.RequestingLightmapBake:
+                    StepRequestingLightmapBake();
+                    break;
+
+                case BenchmarkState.CleaningUpLightmapBake:
+                    StepCleaningUpLightmapBake();
                     break;
 
                 case BenchmarkState.Preparing:
@@ -317,7 +378,7 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
 
         private static void StepPreparingAssetImport()
         {
-            CloseScenesForAssetImport();
+            SaveAndCloseOpenScenes(_originalScenePathsKey);
             TransitionTo(BenchmarkState.RequestingAssetImport);
         }
 
@@ -370,8 +431,127 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
                 return;
             }
 
-            RestoreScenesAfterAssetImport();
+            RestoreOpenScenes(_originalScenePathsKey);
+            TransitionTo(BenchmarkState.PreparingLightmapBake);
+        }
+
+        private static void StepPreparingLightmapBake()
+        {
+            var settings = DevelopmentBenchmarkSettings.GetOrCreateSettings();
+            var sceneAsset = settings.LightmapBenchmarkScene;
+
+            if (sceneAsset == null)
+            {
+                Debug.LogWarning("Skipping Lightmap Baking benchmark category: no scene is assigned to \"Lightmap Benchmark Scene\" in Project Settings > Development Benchmark.");
+                TransitionTo(BenchmarkState.Preparing);
+                return;
+            }
+
+            if (!TrySetupLightmapBenchmarkScene(sceneAsset))
+            {
+                Debug.LogWarning("Skipping Lightmap Baking benchmark category: failed to prepare a temporary copy of the assigned benchmark scene.");
+                TransitionTo(BenchmarkState.Preparing);
+                return;
+            }
+
+            SetLightmapBakeRunIteration(0);
+            TransitionTo(BenchmarkState.RequestingLightmapBake);
+        }
+
+        private static void StepRequestingLightmapBake()
+        {
+            BenchmarkCategoryTimeTracker.Start(BenchmarkCategory.LightmapBaking);
+            Lightmapping.Bake();
+            var lightmapBakeElapsed = BenchmarkCategoryTimeTracker.Stop(BenchmarkCategory.LightmapBaking);
+
+            var iteration = GetLightmapBakeRunIteration() + 1;
+            var count = GetLightmapBakeRunCount();
+            SetLightmapBakeRunIteration(iteration);
+
+            Debug.Log($"Lightmap baking finished ({iteration}/{count}), took {lightmapBakeElapsed}.");
+
+            if (iteration < count)
+            {
+                TransitionTo(BenchmarkState.RequestingLightmapBake);
+                return;
+            }
+
+            TransitionTo(BenchmarkState.CleaningUpLightmapBake);
+        }
+
+        private static void StepCleaningUpLightmapBake()
+        {
+            CleanupLightmapBenchmarkScene();
             TransitionTo(BenchmarkState.Preparing);
+        }
+
+        /// <summary>
+        /// Creates a temporary copy of <paramref name="sceneAsset"/> under
+        /// <see cref="_lightmapBenchmarkTempFolderPath"/> (a directory distinct from the original scene's
+        /// directory) and opens it, so the lightmap data this benchmark run generates is written next to the
+        /// temporary copy instead of polluting the original scene's own lightmap data directory. The originally
+        /// open scene(s) are recorded so <see cref="CleanupLightmapBenchmarkScene"/> can restore them afterwards.
+        /// </summary>
+        private static bool TrySetupLightmapBenchmarkScene(SceneAsset sceneAsset)
+        {
+            var originalScenePath = AssetDatabase.GetAssetPath(sceneAsset);
+            if (string.IsNullOrEmpty(originalScenePath))
+            {
+                return false;
+            }
+
+            var tempFolderPath = EnsureLightmapBenchmarkTempFolderExists();
+            var tempScenePath = $"{tempFolderPath}/{Path.GetFileName(originalScenePath)}";
+
+            // In case a previous run's cleanup failed to run (e.g. the editor crashed mid-benchmark), make sure
+            // we start from a clean slate rather than failing to copy over a leftover temporary scene.
+            AssetDatabase.DeleteAsset(tempScenePath);
+
+            if (!AssetDatabase.CopyAsset(originalScenePath, tempScenePath))
+            {
+                return false;
+            }
+
+            SaveAndCloseOpenScenes(_lightmapOriginalScenePathsKey);
+            EditorSceneManager.OpenScene(tempScenePath, OpenSceneMode.Single);
+
+            SessionState.SetString(_lightmapTempFolderPathKey, tempFolderPath);
+
+            return true;
+        }
+
+        /// <summary>
+        /// Restores whatever scene(s) were open before <see cref="TrySetupLightmapBenchmarkScene"/>, then deletes
+        /// the temporary scene copy together with the lightmap data directory Unity generated next to it.
+        /// </summary>
+        private static void CleanupLightmapBenchmarkScene()
+        {
+            var tempFolderPath = SessionState.GetString(_lightmapTempFolderPathKey, string.Empty);
+            SessionState.EraseString(_lightmapTempFolderPathKey);
+
+            RestoreOpenScenes(_lightmapOriginalScenePathsKey);
+
+            if (!string.IsNullOrEmpty(tempFolderPath) && AssetDatabase.IsValidFolder(tempFolderPath))
+            {
+                AssetDatabase.DeleteAsset(tempFolderPath);
+            }
+
+            AssetDatabase.Refresh();
+        }
+
+        private static string EnsureLightmapBenchmarkTempFolderExists()
+        {
+            if (!AssetDatabase.IsValidFolder(_assetsFolderPath + "/Temp"))
+            {
+                AssetDatabase.CreateFolder(_assetsFolderPath, "Temp");
+            }
+
+            if (!AssetDatabase.IsValidFolder(_lightmapBenchmarkTempFolderPath))
+            {
+                AssetDatabase.CreateFolder(_assetsFolderPath + "/Temp", "LightmapBenchmarkTemp");
+            }
+
+            return _lightmapBenchmarkTempFolderPath;
         }
 
         /// <summary>
@@ -385,11 +565,13 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
         }
 
         /// <summary>
-        /// Closes every currently open scene before forcing a reimport, so Unity doesn't detect the open scene
-        /// file(s) as "changed on disk" during the reimport and prompt the user with a blocking modal dialog
+        /// Closes every currently open scene and records their paths (under <paramref name="sessionKey"/>) so
+        /// <see cref="RestoreOpenScenes"/> can reopen them later. Used before operations (forcing an asset
+        /// reimport, opening a temporary scene for the lightmap baking benchmark) that would otherwise cause Unity
+        /// to detect the open scene file(s) as "changed on disk" and prompt the user with a blocking modal dialog
         /// asking whether to reload them.
         /// </summary>
-        private static void CloseScenesForAssetImport()
+        private static void SaveAndCloseOpenScenes(string sessionKey)
         {
             var openScenePaths = new List<string>();
             for (var i = 0; i < EditorSceneManager.sceneCount; i++)
@@ -401,7 +583,7 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
                 }
             }
 
-            SessionState.SetString(_originalScenePathsKey, string.Join(";", openScenePaths));
+            SessionState.SetString(sessionKey, string.Join(";", openScenePaths));
 
             // Same prompt the user would get anyway when Unity is about to discard/replace the open scene(s).
             // We proceed with the benchmark regardless of the user's choice (save, don't save).
@@ -411,12 +593,13 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
         }
 
         /// <summary>
-        /// Reopens whatever scene(s) were open before <see cref="CloseScenesForAssetImport"/> closed them.
+        /// Reopens whatever scene(s) were open before the matching <see cref="SaveAndCloseOpenScenes"/> call
+        /// (identified by <paramref name="sessionKey"/>) closed them.
         /// </summary>
-        private static void RestoreScenesAfterAssetImport()
+        private static void RestoreOpenScenes(string sessionKey)
         {
-            var joinedPaths = SessionState.GetString(_originalScenePathsKey, string.Empty);
-            SessionState.EraseString(_originalScenePathsKey);
+            var joinedPaths = SessionState.GetString(sessionKey, string.Empty);
+            SessionState.EraseString(sessionKey);
 
             if (string.IsNullOrEmpty(joinedPaths))
             {
@@ -637,6 +820,26 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
         private static void SetAssetImportRunIteration(int iteration)
         {
             SessionState.SetInt(_assetImportRunIterationKey, iteration);
+        }
+
+        private static int GetLightmapBakeRunCount()
+        {
+            return SessionState.GetInt(_lightmapBakeRunCountKey, _defaultLightmapBakeRunCount);
+        }
+
+        private static void SetLightmapBakeRunCount(int count)
+        {
+            SessionState.SetInt(_lightmapBakeRunCountKey, count);
+        }
+
+        private static int GetLightmapBakeRunIteration()
+        {
+            return SessionState.GetInt(_lightmapBakeRunIterationKey, 0);
+        }
+
+        private static void SetLightmapBakeRunIteration(int iteration)
+        {
+            SessionState.SetInt(_lightmapBakeRunIterationKey, iteration);
         }
 
         private static bool TryDisableConsoleClearOnPlay()

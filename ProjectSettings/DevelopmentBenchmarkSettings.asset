@@ -1,0 +1,13 @@
+{
+    "MonoBehaviour": {
+        "m_Enabled": true,
+        "m_EditorHideFlags": 0,
+        "m_Name": "",
+        "m_EditorClassIdentifier": "UnityEditorDevelopmentBenchmark.Editor::UnityEditorDevelopmentBenchmark.Editor.DevelopmentBenchmarkSettings",
+        "_lightmapBenchmarkScene": {
+            "fileID": 102900000,
+            "guid": "2f724c6581d9ccf4ab8d4f65ce2563e3",
+            "type": 3
+        }
+    }
+}

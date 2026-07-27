@@ -17,7 +17,11 @@ namespace UnityEditorDevelopmentBenchmark.Editor
         [SerializeField]
         private SceneAsset _lightmapBenchmarkScene;
 
-        public SceneAsset LightmapBenchmarkScene => _lightmapBenchmarkScene;
+        public SceneAsset LightmapBenchmarkScene
+        {
+            get => _lightmapBenchmarkScene;
+            set => _lightmapBenchmarkScene = value;
+        }
 
         private static DevelopmentBenchmarkSettings _instance;
 

@@ -45,7 +45,9 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
         EditorStartup,
 
         /// <summary>
-        /// Stub. Not yet driven by <see cref="BenchmarkRunner"/>.
+        /// Time spent baking lightmaps for the scene assigned to "Lightmap Benchmark Scene" in
+        /// Project Settings &gt; Development Benchmark. Implemented, driven by <see cref="BenchmarkRunner"/>.
+        /// Skipped (and reported as zero) if no scene is assigned.
         /// </summary>
         LightmapBaking
     }
