@@ -1,7 +1,6 @@
 {
   "dependencies": {
     "com.cysharp.unitask": "2.5.10",
-    "com.needle.compilation-visualizer": "1.8.4",
     "com.unity.ide.rider": "3.0.40",
     "com.unity.multiplayer.center": "1.0.1",
     "com.unity.modules.accessibility": "1.0.0",
