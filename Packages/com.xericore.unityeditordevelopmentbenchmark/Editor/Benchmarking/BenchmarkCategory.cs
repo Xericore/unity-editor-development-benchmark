@@ -38,7 +38,10 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
         AssetImport,
 
         /// <summary>
-        /// Stub. Not yet driven by <see cref="BenchmarkRunner"/>.
+        /// Time spent building a player for the currently selected active build target (<see cref="UnityEditor.EditorUserBuildSettings.activeBuildTarget"/>), using the scenes currently enabled in
+        /// Build Settings, into a temporary directory next to (not inside) the project's "Assets" folder.
+        /// Implemented, driven by <see cref="BenchmarkRunner"/>. Skipped (and reported as zero) if no scenes are
+        /// enabled in Build Settings.
         /// </summary>
         Build,
 

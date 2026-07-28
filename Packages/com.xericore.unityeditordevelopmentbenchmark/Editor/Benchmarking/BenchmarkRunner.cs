@@ -7,6 +7,7 @@ using System.Reflection;
 using System.Text;
 using JetBrains.Annotations;
 using UnityEditor;
+using UnityEditor.Build.Reporting;
 using UnityEditor.Compilation;
 using UnityEditor.SceneManagement;
 using UnityEditorDevelopmentBenchmark.Editor.Util;
@@ -45,6 +46,10 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
             PreparingLightmapBake,
             RequestingLightmapBake,
             CleaningUpLightmapBake,
+            PreparingBuild,
+            RequestingBuild,
+            WaitingForBuildToSettle,
+            CleaningUpBuild,
             Preparing,
             WaitingForPlayMode,
             WaitingForExitPlayMode
@@ -63,14 +68,24 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
         private const string _lightmapBakeRunIterationKey = "UnityEditorDevelopmentBenchmark.BenchmarkRunner.LightmapBakeRunIteration";
         private const string _lightmapOriginalScenePathsKey = "UnityEditorDevelopmentBenchmark.BenchmarkRunner.LightmapOriginalScenePaths";
         private const string _lightmapTempFolderPathKey = "UnityEditorDevelopmentBenchmark.BenchmarkRunner.LightmapTempFolderPath";
+        private const string _buildRunCountKey = "UnityEditorDevelopmentBenchmark.BenchmarkRunner.BuildRunCount";
+        private const string _buildRunIterationKey = "UnityEditorDevelopmentBenchmark.BenchmarkRunner.BuildRunIteration";
+        private const string _buildFolderPathKey = "UnityEditorDevelopmentBenchmark.BenchmarkRunner.BuildFolderPath";
 
         private const int _defaultPlayModeSwitchCount = 3;
         private const int _defaultCompilationRunCount = 3;
         private const int _defaultAssetImportRunCount = 3;
         private const int _defaultLightmapBakeRunCount = 2;
+        private const int _defaultBuildRunCount = 1;
 
         private const string _assetsFolderPath = "Assets";
         private const string _lightmapBenchmarkTempFolderPath = "Assets/Temp/LightmapBenchmarkTemp";
+
+        /// <summary>
+        /// Name of the temporary build output directory, created as a sibling of (not nested inside) the
+        /// project's "Assets" folder, since player builds don't belong in the asset database.
+        /// </summary>
+        private const string _buildBenchmarkFolderName = "BenchmarkBuildsTemp";
 
         private const float _maxLoopTimeInSeconds = 10f;
         private const float _preparationDelayInSeconds = 1f;
@@ -116,7 +131,7 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
         public static void StartBenchmark()
         {
             StartBenchmark(_defaultPlayModeSwitchCount, _defaultCompilationRunCount, _defaultAssetImportRunCount,
-                _defaultLightmapBakeRunCount);
+                _defaultLightmapBakeRunCount, _defaultBuildRunCount);
         }
 
         /// <param name="playModeSwitchCount">
@@ -127,7 +142,7 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
         public static void StartBenchmark(int playModeSwitchCount)
         {
             StartBenchmark(playModeSwitchCount, _defaultCompilationRunCount, _defaultAssetImportRunCount,
-                _defaultLightmapBakeRunCount);
+                _defaultLightmapBakeRunCount, _defaultBuildRunCount);
         }
 
         /// <param name="playModeSwitchCount">
@@ -143,7 +158,7 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
         public static void StartBenchmark(int playModeSwitchCount, int compilationRunCount)
         {
             StartBenchmark(playModeSwitchCount, compilationRunCount, _defaultAssetImportRunCount,
-                _defaultLightmapBakeRunCount);
+                _defaultLightmapBakeRunCount, _defaultBuildRunCount);
         }
 
         /// <param name="playModeSwitchCount">
@@ -163,7 +178,7 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
         public static void StartBenchmark(int playModeSwitchCount, int compilationRunCount, int assetImportRunCount)
         {
             StartBenchmark(playModeSwitchCount, compilationRunCount, assetImportRunCount,
-                _defaultLightmapBakeRunCount);
+                _defaultLightmapBakeRunCount, _defaultBuildRunCount);
         }
 
         /// <param name="playModeSwitchCount">
@@ -187,6 +202,38 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
         [UsedImplicitly]
         public static void StartBenchmark(int playModeSwitchCount, int compilationRunCount, int assetImportRunCount,
             int lightmapBakeRunCount)
+        {
+            StartBenchmark(playModeSwitchCount, compilationRunCount, assetImportRunCount, lightmapBakeRunCount,
+                _defaultBuildRunCount);
+        }
+
+        /// <param name="playModeSwitchCount">
+        /// How many times to enter and exit play mode. Defaults to 3 when invoked from the menu; pass explicitly
+        /// when invoking from the command line via -executeMethod.
+        /// </param>
+        /// <param name="compilationRunCount">
+        /// How many times to force a full script recompilation (via
+        /// <see cref="CompilationPipeline.RequestScriptCompilation()"/> with
+        /// <see cref="RequestScriptCompilationOptions.CleanBuildCache"/> where available). Defaults to 3.
+        /// </param>
+        /// <param name="assetImportRunCount">
+        /// How many times to force a full reimport of everything under the "Assets" folder (never "Packages").
+        /// Defaults to 3.
+        /// </param>
+        /// <param name="lightmapBakeRunCount">
+        /// How many times to bake lightmaps for the scene assigned to "Lightmap Benchmark Scene" in
+        /// Project Settings &gt; Development Benchmark. Defaults to 2. Ignored (the category is skipped) if no
+        /// scene is assigned.
+        /// </param>
+        /// <param name="buildRunCount">
+        /// How many times to build a player for the currently selected active build target
+        /// (<see cref="EditorUserBuildSettings.activeBuildTarget"/>), using the scenes currently enabled in Build
+        /// Settings, into a temporary directory next to (not inside) "Assets". Defaults to 1. Ignored (the
+        /// category is skipped) if no scenes are enabled in Build Settings.
+        /// </param>
+        [UsedImplicitly]
+        public static void StartBenchmark(int playModeSwitchCount, int compilationRunCount, int assetImportRunCount,
+            int lightmapBakeRunCount, int buildRunCount)
         {
             if (EditorApplication.isPlayingOrWillChangePlaymode)
             {
@@ -224,17 +271,24 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
                 lightmapBakeRunCount = 1;
             }
 
+            if (buildRunCount < 1)
+            {
+                Debug.LogWarning($"buildRunCount must be at least 1, got {buildRunCount}. Using 1 instead.");
+                buildRunCount = 1;
+            }
+
             if (!TryDisableConsoleClearOnPlay())
             {
                 Debug.LogWarning("Couldn't disable console clear on play. This may cause the benchmark to not show all logs. Please disable it manually in the Console window settings.");
             }
 
-            Debug.Log($"<color=lime>Starting benchmark ({compilationRunCount} compilation run(s), {assetImportRunCount} asset import run(s), {lightmapBakeRunCount} lightmap bake run(s), {playModeSwitchCount} play mode switch(es))...</color>");
+            Debug.Log($"<color=lime>Starting benchmark ({compilationRunCount} compilation run(s), {assetImportRunCount} asset import run(s), {lightmapBakeRunCount} lightmap bake run(s), {buildRunCount} build run(s), {playModeSwitchCount} play mode switch(es))...</color>");
 
             BenchmarkCategoryTimeTracker.Reset(BenchmarkCategory.PlayModeSwitch);
             BenchmarkCategoryTimeTracker.Reset(BenchmarkCategory.Compilation);
             BenchmarkCategoryTimeTracker.Reset(BenchmarkCategory.DomainReload);
             BenchmarkCategoryTimeTracker.Reset(BenchmarkCategory.AssetImport);
+            BenchmarkCategoryTimeTracker.Reset(BenchmarkCategory.Build);
             BenchmarkCategoryTimeTracker.Reset(BenchmarkCategory.LightmapBaking);
 
             SetPlayModeSwitchCount(playModeSwitchCount);
@@ -248,6 +302,9 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
 
             SetLightmapBakeRunCount(lightmapBakeRunCount);
             SetLightmapBakeRunIteration(0);
+
+            SetBuildRunCount(buildRunCount);
+            SetBuildRunIteration(0);
 
             SetState(BenchmarkState.WaitingForInitialCompilation);
 
@@ -300,6 +357,22 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
 
                 case BenchmarkState.CleaningUpLightmapBake:
                     StepCleaningUpLightmapBake();
+                    break;
+
+                case BenchmarkState.PreparingBuild:
+                    StepPreparingBuild();
+                    break;
+
+                case BenchmarkState.RequestingBuild:
+                    StepRequestingBuild();
+                    break;
+
+                case BenchmarkState.WaitingForBuildToSettle:
+                    StepWaitingForBuildToSettle();
+                    break;
+
+                case BenchmarkState.CleaningUpBuild:
+                    StepCleaningUpBuild();
                     break;
 
                 case BenchmarkState.Preparing:
@@ -510,7 +583,167 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
         private static void StepCleaningUpLightmapBake()
         {
             CleanupLightmapBenchmarkScene();
+            TransitionTo(BenchmarkState.PreparingBuild);
+        }
+
+        private static void StepPreparingBuild()
+        {
+            var scenePaths = GetEnabledBuildScenePaths();
+            if (scenePaths.Length == 0)
+            {
+                Debug.LogWarning("Skipping Build benchmark category: no scenes are enabled in Build Settings.");
+                TransitionTo(BenchmarkState.Preparing);
+                return;
+            }
+
+            var buildFolderPath = EnsureBuildBenchmarkTempFolderExists();
+            SessionState.SetString(_buildFolderPathKey, buildFolderPath);
+
+            SetBuildRunIteration(0);
+            TransitionTo(BenchmarkState.RequestingBuild);
+        }
+
+        private static void StepRequestingBuild()
+        {
+            var buildTarget = EditorUserBuildSettings.activeBuildTarget;
+            var buildFolderPath = SessionState.GetString(_buildFolderPathKey, string.Empty);
+
+            var buildPlayerOptions = new BuildPlayerOptions
+            {
+                scenes = GetEnabledBuildScenePaths(),
+                locationPathName = GetBuildLocationPathName(buildFolderPath, buildTarget),
+                target = buildTarget,
+                targetGroup = BuildPipeline.GetBuildTargetGroup(buildTarget),
+                options = BuildOptions.None
+            };
+
+            BenchmarkCategoryTimeTracker.Start(BenchmarkCategory.Build);
+            var report = BuildPipeline.BuildPlayer(buildPlayerOptions);
+            var buildElapsed = BenchmarkCategoryTimeTracker.Stop(BenchmarkCategory.Build);
+
+            var iteration = GetBuildRunIteration() + 1;
+            var count = GetBuildRunCount();
+            SetBuildRunIteration(iteration);
+
+            if (report.summary.result != BuildResult.Succeeded)
+            {
+                Debug.LogWarning($"Build did not succeed (result: {report.summary.result}); aborting Build benchmark category early.");
+                TransitionTo(BenchmarkState.CleaningUpBuild);
+                return;
+            }
+
+            Debug.Log($"Build finished ({iteration}/{count}), took {buildElapsed}.");
+
+            TransitionTo(BenchmarkState.WaitingForBuildToSettle);
+        }
+
+        private static void StepWaitingForBuildToSettle()
+        {
+            // A player build can incidentally trigger (or itself involve) script compilation. Wait for that to
+            // settle before requesting the next build run so they don't overlap.
+            if (EditorApplication.isCompiling)
+            {
+                if (HasPhaseTimedOut())
+                {
+                    Debug.LogWarning("Timeout while waiting for compilation triggered by build to finish.");
+                    Abort();
+                }
+
+                return;
+            }
+
+            var iteration = GetBuildRunIteration();
+            var count = GetBuildRunCount();
+
+            if (iteration < count)
+            {
+                TransitionTo(BenchmarkState.RequestingBuild);
+                return;
+            }
+
+            TransitionTo(BenchmarkState.CleaningUpBuild);
+        }
+
+        private static void StepCleaningUpBuild()
+        {
+            CleanupBuildBenchmarkFolder();
             TransitionTo(BenchmarkState.Preparing);
+        }
+
+        /// <summary>
+        /// Paths (relative to the project, e.g. "Assets/Scenes/Main.unity") of every scene currently enabled in
+        /// Build Settings, in the order they're listed there.
+        /// </summary>
+        private static string[] GetEnabledBuildScenePaths()
+        {
+            return EditorBuildSettings.scenes
+                .Where(scene => scene.enabled)
+                .Select(scene => scene.path)
+                .ToArray();
+        }
+
+        /// <summary>
+        /// Directory the benchmark builds into, created as a sibling of (not nested inside) the project's
+        /// "Assets" folder, next to "Library", "Packages" and "ProjectSettings".
+        /// </summary>
+        private static string GetBuildBenchmarkTempFolderPath()
+        {
+            var projectRootPath = Directory.GetParent(Application.dataPath).FullName;
+            return Path.Combine(projectRootPath, _buildBenchmarkFolderName);
+        }
+
+        private static string EnsureBuildBenchmarkTempFolderExists()
+        {
+            var folderPath = GetBuildBenchmarkTempFolderPath();
+
+            // In case a previous run's cleanup failed to run (e.g. the editor crashed mid-benchmark), make sure
+            // we start from a clean slate rather than building on top of leftover output.
+            if (Directory.Exists(folderPath))
+            {
+                Directory.Delete(folderPath, true);
+            }
+
+            Directory.CreateDirectory(folderPath);
+            return folderPath;
+        }
+
+        private static void CleanupBuildBenchmarkFolder()
+        {
+            var buildFolderPath = SessionState.GetString(_buildFolderPathKey, string.Empty);
+            SessionState.EraseString(_buildFolderPathKey);
+
+            if (!string.IsNullOrEmpty(buildFolderPath) && Directory.Exists(buildFolderPath))
+            {
+                Directory.Delete(buildFolderPath, true);
+            }
+        }
+
+        /// <summary>
+        /// Full output path (file or directory, depending on <paramref name="buildTarget"/>) to pass as
+        /// <see cref="BuildPlayerOptions.locationPathName"/> for a build into <paramref name="buildFolderPath"/>.
+        /// </summary>
+        private static string GetBuildLocationPathName(string buildFolderPath, BuildTarget buildTarget)
+        {
+            const string buildName = "Benchmark";
+
+            switch (buildTarget)
+            {
+                case BuildTarget.StandaloneWindows:
+                case BuildTarget.StandaloneWindows64:
+                    return Path.Combine(buildFolderPath, buildName + ".exe");
+
+                case BuildTarget.StandaloneOSX:
+                    return Path.Combine(buildFolderPath, buildName + ".app");
+
+                case BuildTarget.Android:
+                    return Path.Combine(buildFolderPath,
+                        EditorUserBuildSettings.exportAsGoogleAndroidProject ? buildName : buildName + ".apk");
+
+                default:
+                    // Covers targets that build into a bare file or directory name (e.g. StandaloneLinux64, iOS's
+                    // Xcode project, WebGL's output folder).
+                    return Path.Combine(buildFolderPath, buildName);
+            }
         }
 
         /// <summary>
@@ -902,6 +1135,26 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
         private static void SetLightmapBakeRunIteration(int iteration)
         {
             SessionState.SetInt(_lightmapBakeRunIterationKey, iteration);
+        }
+
+        private static int GetBuildRunCount()
+        {
+            return SessionState.GetInt(_buildRunCountKey, _defaultBuildRunCount);
+        }
+
+        private static void SetBuildRunCount(int count)
+        {
+            SessionState.SetInt(_buildRunCountKey, count);
+        }
+
+        private static int GetBuildRunIteration()
+        {
+            return SessionState.GetInt(_buildRunIterationKey, 0);
+        }
+
+        private static void SetBuildRunIteration(int iteration)
+        {
+            SessionState.SetInt(_buildRunIterationKey, iteration);
         }
 
         private static bool TryDisableConsoleClearOnPlay()
