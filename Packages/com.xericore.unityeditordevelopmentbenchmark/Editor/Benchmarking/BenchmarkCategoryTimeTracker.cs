@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Globalization;
 using UnityEditor;
+using UnityEngine;
 
 namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
 {
@@ -117,6 +118,23 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
             {
                 Reset(category);
             }
+        }
+
+        /// <summary>
+        /// Lerps from green (shortest of the given range) to red (longest), so category durations can be
+        /// compared visually relative to each other rather than against a fixed absolute scale. Shared by
+        /// <see cref="BenchmarkRunner"/>'s console log breakdown and <see cref="BenchmarkRunnerEditorWindow"/>'s
+        /// table, so both color-code categories the same way.
+        /// </summary>
+        public static Color GetDurationColor(double seconds, double minSeconds, double maxSeconds)
+        {
+            if (Mathf.Approximately((float) minSeconds, (float) maxSeconds))
+            {
+                return Color.green;
+            }
+
+            var t = (float) ((seconds - minSeconds) / (maxSeconds - minSeconds));
+            return Color.Lerp(Color.green, Color.red, t);
         }
 
         private static string StartTimeKey(BenchmarkCategory category)

@@ -32,6 +32,18 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
     [UsedImplicitly]
     public static class BenchmarkRunner
     {
+        /// <summary>
+        /// Fired whenever a benchmark run ends, whether it completed normally or was aborted early (e.g. due to a
+        /// timeout). Intended for UI (such as <see cref="BenchmarkRunnerEditorWindow"/>) that wants to refresh
+        /// itself as soon as fresh results are available, rather than only by polling <see cref="IsRunning"/>.
+        /// </summary>
+        public static event Action BenchmarkFinished;
+
+        /// <summary>
+        /// Whether a benchmark run is currently in progress (as opposed to <see cref="BenchmarkState.None"/>).
+        /// </summary>
+        public static bool IsRunning => GetState() != BenchmarkState.None;
+
         private enum BenchmarkState
         {
             None,
@@ -992,27 +1004,12 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
 
             foreach (var (category, total) in totals.OrderBy(pair => pair.Key.ToString()))
             {
-                var color = GetDurationColor(total.TotalSeconds, minSeconds, maxSeconds);
+                var color = BenchmarkCategoryTimeTracker.GetDurationColor(total.TotalSeconds, minSeconds, maxSeconds);
                 var colorHex = ColorUtility.ToHtmlStringRGB(color);
                 builder.AppendLine($"  <color=#{colorHex}>{category,-16} {total:hh\\:mm\\:ss\\.fff}</color>");
             }
 
             return builder.ToString();
-        }
-
-        /// <summary>
-        /// Lerps from green (shortest of the given categories) to red (longest), so durations can be compared
-        /// visually relative to each other rather than against a fixed absolute scale.
-        /// </summary>
-        private static Color GetDurationColor(double seconds, double minSeconds, double maxSeconds)
-        {
-            if (Mathf.Approximately((float) minSeconds, (float) maxSeconds))
-            {
-                return Color.green;
-            }
-
-            var t = (float) ((seconds - minSeconds) / (maxSeconds - minSeconds));
-            return Color.Lerp(Color.green, Color.red, t);
         }
 
         private static void TransitionTo(BenchmarkState state)
@@ -1030,6 +1027,8 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
         {
             SetState(BenchmarkState.None);
             EditorApplication.update -= Step;
+
+            BenchmarkFinished?.Invoke();
         }
 
         private static bool HasPhaseTimedOut()
