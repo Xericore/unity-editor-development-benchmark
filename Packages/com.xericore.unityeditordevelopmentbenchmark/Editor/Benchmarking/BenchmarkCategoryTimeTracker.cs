@@ -45,6 +45,17 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
         }
 
         /// <summary>
+        /// Adds <paramref name="duration"/> directly to <paramref name="category"/>'s running total, for categories
+        /// whose duration is measured externally (e.g. <see cref="UnityEditorDevelopmentBenchmark.Editor.Util.AssemblyReloadTimer"/>'s
+        /// reconstructed domain reload duration) rather than via a matching <see cref="Start"/>/<see cref="Stop"/> pair.
+        /// </summary>
+        public static void AddDuration(BenchmarkCategory category, TimeSpan duration)
+        {
+            var newTotal = GetTotal(category) + duration;
+            SessionState.SetString(TotalKey(category), newTotal.TotalSeconds.ToString(CultureInfo.InvariantCulture));
+        }
+
+        /// <summary>
         /// Running total of all elapsed spans recorded for <paramref name="category"/> since it was last reset.
         /// </summary>
         public static TimeSpan GetTotal(BenchmarkCategory category)

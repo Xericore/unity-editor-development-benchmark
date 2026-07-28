@@ -9,6 +9,7 @@ using JetBrains.Annotations;
 using UnityEditor;
 using UnityEditor.Compilation;
 using UnityEditor.SceneManagement;
+using UnityEditorDevelopmentBenchmark.Editor.Util;
 using UnityEngine;
 using Debug = UnityEngine.Debug;
 
@@ -76,12 +77,38 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
 
         static BenchmarkRunner()
         {
+            // Subscribed unconditionally (not just while a benchmark is in progress) and re-attached after every
+            // domain reload, since AssemblyReloadTimer.Updated is itself what fires *because of* the domain
+            // reload we want to measure; OnAssemblyReloadTimerUpdated discards the event if no benchmark is
+            // currently running.
+            AssemblyReloadTimer.Updated += OnAssemblyReloadTimerUpdated;
+
             // Re-attach after every domain reload (including the one triggered by EnterPlaymode) if a benchmark
             // is currently in progress.
             if (GetState() != BenchmarkState.None)
             {
                 EditorApplication.update += Step;
             }
+        }
+
+        /// <summary>
+        /// Domain reloads are triggered by Unity itself as part of the forced recompilations already requested by
+        /// <see cref="StepRequestingCompilation"/>, rather than something this runner can request separately, so
+        /// the <see cref="BenchmarkCategory.DomainReload"/> category is recorded by simply listening for
+        /// <see cref="AssemblyReloadTimer"/> to reconstruct each domain reload's duration from the Bee profiler
+        /// trace, whenever that happens to fire while a benchmark is in progress.
+        /// </summary>
+        private static void OnAssemblyReloadTimerUpdated()
+        {
+            if (GetState() == BenchmarkState.None)
+            {
+                return;
+            }
+
+            var domainReloadDuration = AssemblyReloadTimer.AssemblyReloadDuration;
+            BenchmarkCategoryTimeTracker.AddDuration(BenchmarkCategory.DomainReload, domainReloadDuration);
+
+            Debug.Log($"Domain reload finished, took {domainReloadDuration}.");
         }
 
         [MenuItem("Window/Analysis/Start Benchmark")]
@@ -206,6 +233,7 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
 
             BenchmarkCategoryTimeTracker.Reset(BenchmarkCategory.PlayModeSwitch);
             BenchmarkCategoryTimeTracker.Reset(BenchmarkCategory.Compilation);
+            BenchmarkCategoryTimeTracker.Reset(BenchmarkCategory.DomainReload);
             BenchmarkCategoryTimeTracker.Reset(BenchmarkCategory.AssetImport);
             BenchmarkCategoryTimeTracker.Reset(BenchmarkCategory.LightmapBaking);
 

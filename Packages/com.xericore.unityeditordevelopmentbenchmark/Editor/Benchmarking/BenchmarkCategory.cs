@@ -24,7 +24,10 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
         Compilation,
 
         /// <summary>
-        /// Stub. Not yet driven by <see cref="BenchmarkRunner"/>.
+        /// Time spent on domain reloads triggered by the forced script recompilations in the
+        /// <see cref="Compilation"/> category (Unity performs a domain reload as part of the same recompilation,
+        /// not as a separately requestable operation). Implemented, driven by <see cref="BenchmarkRunner"/> via
+        /// <see cref="UnityEditorDevelopmentBenchmark.Editor.Util.AssemblyReloadTimer"/>.
         /// </summary>
         DomainReload,
 
