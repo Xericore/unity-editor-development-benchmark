@@ -1,18 +1,13 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Globalization;
-using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Text;
 using JetBrains.Annotations;
 using UnityEditor;
-using UnityEditor.Build.Reporting;
-using UnityEditor.Compilation;
-using UnityEditor.SceneManagement;
+using UnityEditorDevelopmentBenchmark.Editor.Benchmarking.Categories;
 using UnityEditorDevelopmentBenchmark.Editor.Util;
 using UnityEngine;
-using UnityEngine.SceneManagement;
 using Debug = UnityEngine.Debug;
 
 namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
@@ -29,6 +24,15 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
     /// <see cref="EditorApplication.update"/> subscription is re-attached from an <see cref="InitializeOnLoad"/>
     /// static constructor every time the domain reloads.
     /// </remarks>
+    /// <remarks>
+    /// Acts as a thin orchestrator around one <see cref="IBenchmarkCategoryRunner"/> per <see cref="BenchmarkCategory"/>
+    /// (see <see cref="_categoryRunners"/>): it drives whichever one is currently active via
+    /// <see cref="EditorApplication.update"/>, advances to the next one when it reports
+    /// <see cref="BenchmarkCategoryTickResult.Completed"/>/<see cref="BenchmarkCategoryTickResult.Skipped"/>, and
+    /// aborts the whole run if one reports <see cref="BenchmarkCategoryTickResult.Failed"/> (a phase timing out).
+    /// Everything specific to one category (its own sub-steps, temporary scenes/folders, etc.) lives in that
+    /// category's own class under the <c>Categories</c> namespace instead of here.
+    /// </remarks>
     [InitializeOnLoad]
     [UsedImplicitly]
     public static class BenchmarkRunner
@@ -41,67 +45,38 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
         public static event Action BenchmarkFinished;
 
         /// <summary>
-        /// Whether a benchmark run is currently in progress (as opposed to <see cref="BenchmarkState.None"/>).
+        /// Whether a benchmark run is currently in progress (as opposed to <see cref="OrchestratorState.None"/>).
         /// </summary>
-        public static bool IsRunning => GetState() != BenchmarkState.None;
+        public static bool IsRunning => GetState() != OrchestratorState.None;
 
-        private enum BenchmarkState
+        private enum OrchestratorState
         {
             None,
             WaitingForInitialCompilation,
-            WaitingBeforeCompilationRun,
-            RequestingCompilation,
-            WaitingForCompilationToStart,
-            WaitingForCompilationToFinish,
-            PreparingAssetImport,
-            RequestingAssetImport,
-            WaitingForAssetImportToSettle,
-            PreparingLightmapBake,
-            RequestingLightmapBake,
-            CleaningUpLightmapBake,
-            PreparingBuild,
-            RequestingBuild,
-            WaitingForBuildToSettle,
-            CleaningUpBuild,
-            Preparing,
-            WaitingForPlayMode,
-            WaitingForExitPlayMode
+            RunningCategory
         }
 
         private const string _stateKey = "UnityEditorDevelopmentBenchmark.BenchmarkRunner.State";
-        private const string _phaseStartTimeKey = "UnityEditorDevelopmentBenchmark.BenchmarkRunner.PhaseStartTime";
-        private const string _playModeSwitchCountKey = "UnityEditorDevelopmentBenchmark.BenchmarkRunner.PlayModeSwitchCount";
-        private const string _playModeSwitchIterationKey = "UnityEditorDevelopmentBenchmark.BenchmarkRunner.PlayModeSwitchIteration";
-        private const string _compilationRunCountKey = "UnityEditorDevelopmentBenchmark.BenchmarkRunner.CompilationRunCount";
-        private const string _compilationRunIterationKey = "UnityEditorDevelopmentBenchmark.BenchmarkRunner.CompilationRunIteration";
-        private const string _assetImportRunCountKey = "UnityEditorDevelopmentBenchmark.BenchmarkRunner.AssetImportRunCount";
-        private const string _assetImportRunIterationKey = "UnityEditorDevelopmentBenchmark.BenchmarkRunner.AssetImportRunIteration";
-        private const string _originalScenePathsKey = "UnityEditorDevelopmentBenchmark.BenchmarkRunner.OriginalScenePaths";
-        private const string _lightmapBakeRunCountKey = "UnityEditorDevelopmentBenchmark.BenchmarkRunner.LightmapBakeRunCount";
-        private const string _lightmapBakeRunIterationKey = "UnityEditorDevelopmentBenchmark.BenchmarkRunner.LightmapBakeRunIteration";
-        private const string _lightmapOriginalScenePathsKey = "UnityEditorDevelopmentBenchmark.BenchmarkRunner.LightmapOriginalScenePaths";
-        private const string _lightmapTempFolderPathKey = "UnityEditorDevelopmentBenchmark.BenchmarkRunner.LightmapTempFolderPath";
-        private const string _buildRunCountKey = "UnityEditorDevelopmentBenchmark.BenchmarkRunner.BuildRunCount";
-        private const string _buildRunIterationKey = "UnityEditorDevelopmentBenchmark.BenchmarkRunner.BuildRunIteration";
-        private const string _buildFolderPathKey = "UnityEditorDevelopmentBenchmark.BenchmarkRunner.BuildFolderPath";
-
-        private const int _defaultPlayModeSwitchCount = 3;
-        private const int _defaultCompilationRunCount = 3;
-        private const int _defaultAssetImportRunCount = 3;
-        private const int _defaultLightmapBakeRunCount = 2;
-        private const int _defaultBuildRunCount = 1;
-
-        private const string _assetsFolderPath = "Assets";
-        private const string _lightmapBenchmarkTempFolderPath = "Assets/Temp/LightmapBenchmarkTemp";
+        private const string _currentCategoryIndexKey = "UnityEditorDevelopmentBenchmark.BenchmarkRunner.CurrentCategoryIndex";
+        private const string _runCountKeyPrefix = "UnityEditorDevelopmentBenchmark.BenchmarkRunner.RunCount.";
 
         /// <summary>
-        /// Name of the temporary build output directory, created as a sibling of (not nested inside) the
-        /// project's "Assets" folder, since player builds don't belong in the asset database.
+        /// One runner per <see cref="BenchmarkCategory"/> this benchmark drives, in the order they run. Held as a
+        /// static readonly array (recreated fresh after every domain reload, since these instances hold no state
+        /// of their own - see <see cref="IBenchmarkCategoryRunner"/>) purely to fix that order in one obvious
+        /// place, the same reasoning <see cref="UnityEditorDevelopmentBenchmark.Editor.UserWaitTimeAggregator"/>
+        /// uses for its trackers.
         /// </summary>
-        private const string _buildBenchmarkFolderName = "BenchmarkBuildsTemp";
+        private static readonly IBenchmarkCategoryRunner[] _categoryRunners =
+        {
+            new CompilationBenchmarkCategoryRunner(),
+            new AssetImportBenchmarkCategoryRunner(),
+            new LightmapBakingBenchmarkCategoryRunner(),
+            new BuildBenchmarkCategoryRunner(),
+            new PlayModeSwitchBenchmarkCategoryRunner()
+        };
 
-        private const float _maxLoopTimeInSeconds = 10f;
-        private const float _preparationDelayInSeconds = 1f;
+        private static readonly IBenchmarkRunnerContext _context = new BenchmarkRunnerContext();
 
         static BenchmarkRunner()
         {
@@ -113,7 +88,7 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
 
             // Re-attach after every domain reload (including the one triggered by EnterPlaymode) if a benchmark
             // is currently in progress.
-            if (GetState() != BenchmarkState.None)
+            if (GetState() != OrchestratorState.None)
             {
                 EditorApplication.update += Step;
             }
@@ -121,14 +96,17 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
 
         /// <summary>
         /// Domain reloads are triggered by Unity itself as part of the forced recompilations already requested by
-        /// <see cref="StepRequestingCompilation"/>, rather than something this runner can request separately, so
-        /// the <see cref="BenchmarkCategory.DomainReload"/> category is recorded by simply listening for
-        /// <see cref="AssemblyReloadTimer"/> to reconstruct each domain reload's duration from the Bee profiler
-        /// trace, whenever that happens to fire while a benchmark is in progress.
+        /// <see cref="CompilationBenchmarkCategoryRunner"/>, rather than something this runner can request
+        /// separately, so the <see cref="BenchmarkCategory.DomainReload"/> category is recorded by simply
+        /// listening for <see cref="AssemblyReloadTimer"/> to reconstruct each domain reload's duration from the
+        /// Bee profiler trace, whenever that happens to fire while a benchmark is in progress. This is a
+        /// standalone, always-on listener rather than an <see cref="IBenchmarkCategoryRunner"/> like the other
+        /// categories, since it isn't a phase you step through - it just piggybacks on whatever else is
+        /// happening (mainly the Compilation category) at the time.
         /// </summary>
         private static void OnAssemblyReloadTimerUpdated()
         {
-            if (GetState() == BenchmarkState.None)
+            if (GetState() == OrchestratorState.None)
             {
                 return;
             }
@@ -143,110 +121,11 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
         [UsedImplicitly]
         public static void StartBenchmark()
         {
-            StartBenchmark(_defaultPlayModeSwitchCount, _defaultCompilationRunCount, _defaultAssetImportRunCount,
-                _defaultLightmapBakeRunCount, _defaultBuildRunCount);
+            StartBenchmark(new BenchmarkRunOptions());
         }
 
-        /// <param name="playModeSwitchCount">
-        /// How many times to enter and exit play mode. Defaults to 3 when invoked from the menu; pass explicitly
-        /// when invoking from the command line via -executeMethod.
-        /// </param>
         [UsedImplicitly]
-        public static void StartBenchmark(int playModeSwitchCount)
-        {
-            StartBenchmark(playModeSwitchCount, _defaultCompilationRunCount, _defaultAssetImportRunCount,
-                _defaultLightmapBakeRunCount, _defaultBuildRunCount);
-        }
-
-        /// <param name="playModeSwitchCount">
-        /// How many times to enter and exit play mode. Defaults to 3 when invoked from the menu; pass explicitly
-        /// when invoking from the command line via -executeMethod.
-        /// </param>
-        /// <param name="compilationRunCount">
-        /// How many times to force a full script recompilation (via
-        /// <see cref="CompilationPipeline.RequestScriptCompilation()"/> with
-        /// <see cref="RequestScriptCompilationOptions.CleanBuildCache"/> where available). Defaults to 3.
-        /// </param>
-        [UsedImplicitly]
-        public static void StartBenchmark(int playModeSwitchCount, int compilationRunCount)
-        {
-            StartBenchmark(playModeSwitchCount, compilationRunCount, _defaultAssetImportRunCount,
-                _defaultLightmapBakeRunCount, _defaultBuildRunCount);
-        }
-
-        /// <param name="playModeSwitchCount">
-        /// How many times to enter and exit play mode. Defaults to 3 when invoked from the menu; pass explicitly
-        /// when invoking from the command line via -executeMethod.
-        /// </param>
-        /// <param name="compilationRunCount">
-        /// How many times to force a full script recompilation (via
-        /// <see cref="CompilationPipeline.RequestScriptCompilation()"/> with
-        /// <see cref="RequestScriptCompilationOptions.CleanBuildCache"/> where available). Defaults to 3.
-        /// </param>
-        /// <param name="assetImportRunCount">
-        /// How many times to force a full reimport of everything under the "Assets" folder (never "Packages").
-        /// Defaults to 3.
-        /// </param>
-        [UsedImplicitly]
-        public static void StartBenchmark(int playModeSwitchCount, int compilationRunCount, int assetImportRunCount)
-        {
-            StartBenchmark(playModeSwitchCount, compilationRunCount, assetImportRunCount,
-                _defaultLightmapBakeRunCount, _defaultBuildRunCount);
-        }
-
-        /// <param name="playModeSwitchCount">
-        /// How many times to enter and exit play mode. Defaults to 3 when invoked from the menu; pass explicitly
-        /// when invoking from the command line via -executeMethod.
-        /// </param>
-        /// <param name="compilationRunCount">
-        /// How many times to force a full script recompilation (via
-        /// <see cref="CompilationPipeline.RequestScriptCompilation()"/> with
-        /// <see cref="RequestScriptCompilationOptions.CleanBuildCache"/> where available). Defaults to 3.
-        /// </param>
-        /// <param name="assetImportRunCount">
-        /// How many times to force a full reimport of everything under the "Assets" folder (never "Packages").
-        /// Defaults to 3.
-        /// </param>
-        /// <param name="lightmapBakeRunCount">
-        /// How many times to bake lightmaps for the scene assigned to "Lightmap Benchmark Scene" in
-        /// Project Settings &gt; Development Benchmark. Defaults to 2. Ignored (the category is skipped) if no
-        /// scene is assigned.
-        /// </param>
-        [UsedImplicitly]
-        public static void StartBenchmark(int playModeSwitchCount, int compilationRunCount, int assetImportRunCount,
-            int lightmapBakeRunCount)
-        {
-            StartBenchmark(playModeSwitchCount, compilationRunCount, assetImportRunCount, lightmapBakeRunCount,
-                _defaultBuildRunCount);
-        }
-
-        /// <param name="playModeSwitchCount">
-        /// How many times to enter and exit play mode. Defaults to 3 when invoked from the menu; pass explicitly
-        /// when invoking from the command line via -executeMethod.
-        /// </param>
-        /// <param name="compilationRunCount">
-        /// How many times to force a full script recompilation (via
-        /// <see cref="CompilationPipeline.RequestScriptCompilation()"/> with
-        /// <see cref="RequestScriptCompilationOptions.CleanBuildCache"/> where available). Defaults to 3.
-        /// </param>
-        /// <param name="assetImportRunCount">
-        /// How many times to force a full reimport of everything under the "Assets" folder (never "Packages").
-        /// Defaults to 3.
-        /// </param>
-        /// <param name="lightmapBakeRunCount">
-        /// How many times to bake lightmaps for the scene assigned to "Lightmap Benchmark Scene" in
-        /// Project Settings &gt; Development Benchmark. Defaults to 2. Ignored (the category is skipped) if no
-        /// scene is assigned.
-        /// </param>
-        /// <param name="buildRunCount">
-        /// How many times to build a player for the currently selected active build target
-        /// (<see cref="EditorUserBuildSettings.activeBuildTarget"/>), using the scenes currently enabled in Build
-        /// Settings, into a temporary directory next to (not inside) "Assets". Defaults to 1. Ignored (the
-        /// category is skipped) if no scenes are enabled in Build Settings.
-        /// </param>
-        [UsedImplicitly]
-        public static void StartBenchmark(int playModeSwitchCount, int compilationRunCount, int assetImportRunCount,
-            int lightmapBakeRunCount, int buildRunCount)
+        public static void StartBenchmark(BenchmarkRunOptions options)
         {
             if (EditorApplication.isPlayingOrWillChangePlaymode)
             {
@@ -254,72 +133,40 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
                 return;
             }
 
-            if (GetState() != BenchmarkState.None)
+            if (GetState() != OrchestratorState.None)
             {
                 Debug.LogWarning("A benchmark is already in progress.");
                 return;
             }
 
-            if (playModeSwitchCount < 1)
-            {
-                Debug.LogWarning($"playModeSwitchCount must be at least 1, got {playModeSwitchCount}. Using 1 instead.");
-                playModeSwitchCount = 1;
-            }
+            options ??= new BenchmarkRunOptions();
 
-            if (compilationRunCount < 1)
-            {
-                Debug.LogWarning($"compilationRunCount must be at least 1, got {compilationRunCount}. Using 1 instead.");
-                compilationRunCount = 1;
-            }
-
-            if (assetImportRunCount < 1)
-            {
-                Debug.LogWarning($"assetImportRunCount must be at least 1, got {assetImportRunCount}. Using 1 instead.");
-                assetImportRunCount = 1;
-            }
-
-            if (lightmapBakeRunCount < 1)
-            {
-                Debug.LogWarning($"lightmapBakeRunCount must be at least 1, got {lightmapBakeRunCount}. Using 1 instead.");
-                lightmapBakeRunCount = 1;
-            }
-
-            if (buildRunCount < 1)
-            {
-                Debug.LogWarning($"buildRunCount must be at least 1, got {buildRunCount}. Using 1 instead.");
-                buildRunCount = 1;
-            }
+            options.PlayModeSwitchCount = ClampToAtLeastOne(options.PlayModeSwitchCount, nameof(options.PlayModeSwitchCount));
+            options.CompilationRunCount = ClampToAtLeastOne(options.CompilationRunCount, nameof(options.CompilationRunCount));
+            options.AssetImportRunCount = ClampToAtLeastOne(options.AssetImportRunCount, nameof(options.AssetImportRunCount));
+            options.LightmapBakeRunCount = ClampToAtLeastOne(options.LightmapBakeRunCount, nameof(options.LightmapBakeRunCount));
+            options.BuildRunCount = ClampToAtLeastOne(options.BuildRunCount, nameof(options.BuildRunCount));
 
             if (!TryDisableConsoleClearOnPlay())
             {
                 Debug.LogWarning("Couldn't disable console clear on play. This may cause the benchmark to not show all logs. Please disable it manually in the Console window settings.");
             }
 
-            Debug.Log($"<color=lime>Starting benchmark ({compilationRunCount} compilation run(s), {assetImportRunCount} asset import run(s), {lightmapBakeRunCount} lightmap bake run(s), {buildRunCount} build run(s), {playModeSwitchCount} play mode switch(es))...</color>");
+            Debug.Log($"<color=lime>Starting benchmark ({options.CompilationRunCount} compilation run(s), {options.AssetImportRunCount} asset import run(s), {options.LightmapBakeRunCount} lightmap bake run(s), {options.BuildRunCount} build run(s), {options.PlayModeSwitchCount} play mode switch(es))...</color>");
 
-            BenchmarkCategoryTimeTracker.Reset(BenchmarkCategory.PlayModeSwitch);
-            BenchmarkCategoryTimeTracker.Reset(BenchmarkCategory.Compilation);
-            BenchmarkCategoryTimeTracker.Reset(BenchmarkCategory.DomainReload);
-            BenchmarkCategoryTimeTracker.Reset(BenchmarkCategory.AssetImport);
-            BenchmarkCategoryTimeTracker.Reset(BenchmarkCategory.Build);
-            BenchmarkCategoryTimeTracker.Reset(BenchmarkCategory.LightmapBaking);
+            foreach (BenchmarkCategory category in Enum.GetValues(typeof(BenchmarkCategory)))
+            {
+                BenchmarkCategoryTimeTracker.Reset(category);
+            }
 
-            SetPlayModeSwitchCount(playModeSwitchCount);
-            SetPlayModeSwitchIteration(0);
+            SetRunCount(BenchmarkCategory.Compilation, options.CompilationRunCount);
+            SetRunCount(BenchmarkCategory.AssetImport, options.AssetImportRunCount);
+            SetRunCount(BenchmarkCategory.LightmapBaking, options.LightmapBakeRunCount);
+            SetRunCount(BenchmarkCategory.Build, options.BuildRunCount);
+            SetRunCount(BenchmarkCategory.PlayModeSwitch, options.PlayModeSwitchCount);
 
-            SetCompilationRunCount(compilationRunCount);
-            SetCompilationRunIteration(0);
-
-            SetAssetImportRunCount(assetImportRunCount);
-            SetAssetImportRunIteration(0);
-
-            SetLightmapBakeRunCount(lightmapBakeRunCount);
-            SetLightmapBakeRunIteration(0);
-
-            SetBuildRunCount(buildRunCount);
-            SetBuildRunIteration(0);
-
-            SetState(BenchmarkState.WaitingForInitialCompilation);
+            SetState(OrchestratorState.WaitingForInitialCompilation);
+            _context.ResetPhaseTimer();
 
             EditorApplication.update += Step;
         }
@@ -327,14 +174,14 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
         /// <summary>
         /// Stops the currently in-progress benchmark run early (e.g. in response to the user clicking
         /// "Stop Benchmark" in <see cref="BenchmarkRunnerEditorWindow"/>), doing the same best-effort cleanup as a
-        /// phase timing out via <see cref="HasPhaseTimedOut"/> would. Categories that hadn't finished yet simply
-        /// keep whatever partial total they'd accumulated so far.
+        /// category reporting <see cref="BenchmarkCategoryTickResult.Failed"/> would. Categories that hadn't
+        /// finished yet simply keep whatever partial total they'd accumulated so far.
         /// </summary>
         [MenuItem("Window/Analysis/Stop Benchmark")]
         [UsedImplicitly]
         public static void StopBenchmark()
         {
-            if (GetState() == BenchmarkState.None)
+            if (GetState() == OrchestratorState.None)
             {
                 Debug.LogWarning("No benchmark is currently running.");
                 return;
@@ -342,86 +189,22 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
 
             Debug.LogWarning("<color=orange>Benchmark stopped by user.</color>");
 
-            Abort();
+            AbortBenchmark();
         }
 
         private static void Step()
         {
             switch (GetState())
             {
-                case BenchmarkState.WaitingForInitialCompilation:
+                case OrchestratorState.WaitingForInitialCompilation:
                     StepWaitingForInitialCompilation();
                     break;
 
-                case BenchmarkState.WaitingBeforeCompilationRun:
-                    StepWaitingBeforeCompilationRun();
+                case OrchestratorState.RunningCategory:
+                    StepRunningCategory();
                     break;
 
-                case BenchmarkState.RequestingCompilation:
-                    StepRequestingCompilation();
-                    break;
-
-                case BenchmarkState.WaitingForCompilationToStart:
-                    StepWaitingForCompilationToStart();
-                    break;
-
-                case BenchmarkState.WaitingForCompilationToFinish:
-                    StepWaitingForCompilationToFinish();
-                    break;
-
-                case BenchmarkState.PreparingAssetImport:
-                    StepPreparingAssetImport();
-                    break;
-
-                case BenchmarkState.RequestingAssetImport:
-                    StepRequestingAssetImport();
-                    break;
-
-                case BenchmarkState.WaitingForAssetImportToSettle:
-                    StepWaitingForAssetImportToSettle();
-                    break;
-
-                case BenchmarkState.PreparingLightmapBake:
-                    StepPreparingLightmapBake();
-                    break;
-
-                case BenchmarkState.RequestingLightmapBake:
-                    StepRequestingLightmapBake();
-                    break;
-
-                case BenchmarkState.CleaningUpLightmapBake:
-                    StepCleaningUpLightmapBake();
-                    break;
-
-                case BenchmarkState.PreparingBuild:
-                    StepPreparingBuild();
-                    break;
-
-                case BenchmarkState.RequestingBuild:
-                    StepRequestingBuild();
-                    break;
-
-                case BenchmarkState.WaitingForBuildToSettle:
-                    StepWaitingForBuildToSettle();
-                    break;
-
-                case BenchmarkState.CleaningUpBuild:
-                    StepCleaningUpBuild();
-                    break;
-
-                case BenchmarkState.Preparing:
-                    StepPreparing();
-                    break;
-
-                case BenchmarkState.WaitingForPlayMode:
-                    StepWaitingForPlayMode();
-                    break;
-
-                case BenchmarkState.WaitingForExitPlayMode:
-                    StepWaitingForExitPlayMode();
-                    break;
-
-                case BenchmarkState.None:
+                case OrchestratorState.None:
                 default:
                     EditorApplication.update -= Step;
                     break;
@@ -432,640 +215,75 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
         {
             if (EditorApplication.isCompiling)
             {
-                if (HasPhaseTimedOut())
+                if (_context.HasPhaseTimedOut())
                 {
                     Debug.LogWarning("Timeout while waiting for compilation to finish.");
-                    Abort();
+                    AbortBenchmark();
                 }
 
                 return;
             }
 
             Debug.Log("Preparing benchmark...");
-            TransitionTo(BenchmarkState.WaitingBeforeCompilationRun);
+
+            BeginCategory(0);
         }
 
-        private static void StepWaitingBeforeCompilationRun()
+        private static void StepRunningCategory()
         {
-            // Give other tools that read Library/Bee/fullprofile.json in response to the previous compilation
-            // (e.g. the Compilation Visualizer package) a moment to finish, so our next forced recompile doesn't
-            // start rewriting/locking the file out from under them and cause a sharing violation.
-            if (EditorApplication.timeSinceStartup - GetPhaseStartTime() < _preparationDelayInSeconds)
+            var index = GetCurrentCategoryIndex();
+            var runner = _categoryRunners[index];
+
+            var result = runner.Tick(_context);
+
+            switch (result)
             {
+                case BenchmarkCategoryTickResult.InProgress:
+                    break;
+
+                case BenchmarkCategoryTickResult.Completed:
+                case BenchmarkCategoryTickResult.Skipped:
+                    AdvanceToNextCategoryOrFinish(index);
+                    break;
+
+                case BenchmarkCategoryTickResult.Failed:
+                    AbortBenchmark();
+                    break;
+            }
+        }
+
+        private static void BeginCategory(int index)
+        {
+            SetCurrentCategoryIndex(index);
+
+            var runner = _categoryRunners[index];
+            runner.Begin(GetRunCount(runner.Category));
+
+            SetState(OrchestratorState.RunningCategory);
+            _context.ResetPhaseTimer();
+        }
+
+        private static void AdvanceToNextCategoryOrFinish(int completedIndex)
+        {
+            var nextIndex = completedIndex + 1;
+
+            if (nextIndex < _categoryRunners.Length)
+            {
+                BeginCategory(nextIndex);
                 return;
             }
 
-            TransitionTo(BenchmarkState.RequestingCompilation);
+            LogFinalBreakdown();
+            Finish();
         }
 
-        private static void StepRequestingCompilation()
+        private static void LogFinalBreakdown()
         {
-            BenchmarkCategoryTimeTracker.Start(BenchmarkCategory.Compilation);
-            RequestScriptCompilation();
-
-            TransitionTo(BenchmarkState.WaitingForCompilationToStart);
-        }
-
-        private static void StepWaitingForCompilationToStart()
-        {
-            if (EditorApplication.isCompiling)
-            {
-                TransitionTo(BenchmarkState.WaitingForCompilationToFinish);
-                return;
-            }
-
-            if (HasPhaseTimedOut())
-            {
-                Debug.LogWarning("Timeout while waiting for compilation to start.");
-                Abort();
-            }
-        }
-
-        private static void StepWaitingForCompilationToFinish()
-        {
-            if (EditorApplication.isCompiling)
-            {
-                if (HasPhaseTimedOut())
-                {
-                    Debug.LogWarning("Timeout while waiting for compilation to finish.");
-                    Abort();
-                }
-
-                return;
-            }
-
-            var compilationElapsed = BenchmarkCategoryTimeTracker.Stop(BenchmarkCategory.Compilation);
-
-            var iteration = GetCompilationRunIteration() + 1;
-            var count = GetCompilationRunCount();
-            SetCompilationRunIteration(iteration);
-
-            Debug.Log($"Compilation finished ({iteration}/{count}), took {compilationElapsed}.");
-
-            if (iteration < count)
-            {
-                TransitionTo(BenchmarkState.WaitingBeforeCompilationRun);
-                return;
-            }
-
-            TransitionTo(BenchmarkState.PreparingAssetImport);
-        }
-
-        private static void StepPreparingAssetImport()
-        {
-            // The scene(s) being closed here are whatever the user actually had open (the real scene), so prompt
-            // to save as usual rather than silently discarding their changes.
-            SaveAndCloseOpenScenes(_originalScenePathsKey, promptToSaveModifiedScenes: true);
-            TransitionTo(BenchmarkState.RequestingAssetImport);
-        }
-
-        private static void RequestScriptCompilation()
-        {
-#if UNITY_2021_1_OR_NEWER
-            CompilationPipeline.RequestScriptCompilation(RequestScriptCompilationOptions.CleanBuildCache);
-#elif UNITY_2019_3_OR_NEWER
-            CompilationPipeline.RequestScriptCompilation();
-#endif
-        }
-
-        private static void StepRequestingAssetImport()
-        {
-            BenchmarkCategoryTimeTracker.Start(BenchmarkCategory.AssetImport);
-            ReimportAssetsFolder();
-            var assetImportElapsed = BenchmarkCategoryTimeTracker.Stop(BenchmarkCategory.AssetImport);
-
-            var iteration = GetAssetImportRunIteration() + 1;
-            var count = GetAssetImportRunCount();
-            SetAssetImportRunIteration(iteration);
-
-            Debug.Log($"Asset import finished ({iteration}/{count}), took {assetImportElapsed}.");
-
-            TransitionTo(BenchmarkState.WaitingForAssetImportToSettle);
-        }
-
-        private static void StepWaitingForAssetImportToSettle()
-        {
-            // Reimporting assets can incidentally trigger script compilation (e.g. if a .cs file under "Assets"
-            // got reimported), which in turn can trigger a domain reload. Wait for that to settle before
-            // requesting the next asset import run so they don't overlap.
-            if (EditorApplication.isCompiling)
-            {
-                if (HasPhaseTimedOut())
-                {
-                    Debug.LogWarning("Timeout while waiting for compilation triggered by asset import to finish.");
-                    Abort();
-                }
-
-                return;
-            }
-
-            var iteration = GetAssetImportRunIteration();
-            var count = GetAssetImportRunCount();
-
-            if (iteration < count)
-            {
-                TransitionTo(BenchmarkState.RequestingAssetImport);
-                return;
-            }
-
-            // Reopening the real scene here too, so prompt as usual.
-            RestoreOpenScenes(_originalScenePathsKey, promptToSaveModifiedScenes: true);
-            TransitionTo(BenchmarkState.PreparingLightmapBake);
-        }
-
-        private static void StepPreparingLightmapBake()
-        {
-            var settings = DevelopmentBenchmarkSettings.GetOrCreateSettings();
-            var sceneAsset = settings.LightmapBenchmarkScene;
-
-            if (sceneAsset == null)
-            {
-                Debug.LogWarning("Skipping Lightmap Baking benchmark category: no scene is assigned to \"Lightmap Benchmark Scene\" in Project Settings > Development Benchmark.");
-                TransitionTo(BenchmarkState.Preparing);
-                return;
-            }
-
-            if (!TrySetupLightmapBenchmarkScene(sceneAsset))
-            {
-                Debug.LogWarning("Skipping Lightmap Baking benchmark category: failed to prepare a temporary copy of the assigned benchmark scene.");
-                TransitionTo(BenchmarkState.Preparing);
-                return;
-            }
-
-            SetLightmapBakeRunIteration(0);
-            TransitionTo(BenchmarkState.RequestingLightmapBake);
-        }
-
-        private static void StepRequestingLightmapBake()
-        {
-            BenchmarkCategoryTimeTracker.Start(BenchmarkCategory.LightmapBaking);
-            Lightmapping.Bake();
-            var lightmapBakeElapsed = BenchmarkCategoryTimeTracker.Stop(BenchmarkCategory.LightmapBaking);
-
-            var iteration = GetLightmapBakeRunIteration() + 1;
-            var count = GetLightmapBakeRunCount();
-            SetLightmapBakeRunIteration(iteration);
-
-            Debug.Log($"Lightmap baking finished ({iteration}/{count}), took {lightmapBakeElapsed}.");
-
-            if (iteration < count)
-            {
-                TransitionTo(BenchmarkState.RequestingLightmapBake);
-                return;
-            }
-
-            TransitionTo(BenchmarkState.CleaningUpLightmapBake);
-        }
-
-        private static void StepCleaningUpLightmapBake()
-        {
-            CleanupLightmapBenchmarkScene();
-            TransitionTo(BenchmarkState.PreparingBuild);
-        }
-
-        private static void StepPreparingBuild()
-        {
-            var scenePaths = GetEnabledBuildScenePaths();
-            if (scenePaths.Length == 0)
-            {
-                Debug.LogWarning("Skipping Build benchmark category: no scenes are enabled in Build Settings.");
-                TransitionTo(BenchmarkState.Preparing);
-                return;
-            }
-
-            var buildFolderPath = EnsureBuildBenchmarkTempFolderExists();
-            SessionState.SetString(_buildFolderPathKey, buildFolderPath);
-
-            SetBuildRunIteration(0);
-            TransitionTo(BenchmarkState.RequestingBuild);
-        }
-
-        private static void StepRequestingBuild()
-        {
-            var buildTarget = EditorUserBuildSettings.activeBuildTarget;
-            var buildFolderPath = SessionState.GetString(_buildFolderPathKey, string.Empty);
-
-            var buildPlayerOptions = new BuildPlayerOptions
-            {
-                scenes = GetEnabledBuildScenePaths(),
-                locationPathName = GetBuildLocationPathName(buildFolderPath, buildTarget),
-                target = buildTarget,
-                targetGroup = BuildPipeline.GetBuildTargetGroup(buildTarget),
-                options = BuildOptions.None
-            };
-
-            BenchmarkCategoryTimeTracker.Start(BenchmarkCategory.Build);
-            var report = BuildPipeline.BuildPlayer(buildPlayerOptions);
-            var buildElapsed = BenchmarkCategoryTimeTracker.Stop(BenchmarkCategory.Build);
-
-            var iteration = GetBuildRunIteration() + 1;
-            var count = GetBuildRunCount();
-            SetBuildRunIteration(iteration);
-
-            if (report.summary.result != BuildResult.Succeeded)
-            {
-                Debug.LogWarning($"Build did not succeed (result: {report.summary.result}); aborting Build benchmark category early.");
-                TransitionTo(BenchmarkState.CleaningUpBuild);
-                return;
-            }
-
-            Debug.Log($"Build finished ({iteration}/{count}), took {buildElapsed}.");
-
-            TransitionTo(BenchmarkState.WaitingForBuildToSettle);
-        }
-
-        private static void StepWaitingForBuildToSettle()
-        {
-            // A player build can incidentally trigger (or itself involve) script compilation. Wait for that to
-            // settle before requesting the next build run so they don't overlap.
-            if (EditorApplication.isCompiling)
-            {
-                if (HasPhaseTimedOut())
-                {
-                    Debug.LogWarning("Timeout while waiting for compilation triggered by build to finish.");
-                    Abort();
-                }
-
-                return;
-            }
-
-            var iteration = GetBuildRunIteration();
-            var count = GetBuildRunCount();
-
-            if (iteration < count)
-            {
-                TransitionTo(BenchmarkState.RequestingBuild);
-                return;
-            }
-
-            TransitionTo(BenchmarkState.CleaningUpBuild);
-        }
-
-        private static void StepCleaningUpBuild()
-        {
-            CleanupBuildBenchmarkFolder();
-            TransitionTo(BenchmarkState.Preparing);
-        }
-
-        /// <summary>
-        /// Paths (relative to the project, e.g. "Assets/Scenes/Main.unity") of every scene currently enabled in
-        /// Build Settings, in the order they're listed there.
-        /// </summary>
-        private static string[] GetEnabledBuildScenePaths()
-        {
-            return EditorBuildSettings.scenes
-                .Where(scene => scene.enabled)
-                .Select(scene => scene.path)
-                .ToArray();
-        }
-
-        /// <summary>
-        /// Directory the benchmark builds into, created as a sibling of (not nested inside) the project's
-        /// "Assets" folder, next to "Library", "Packages" and "ProjectSettings".
-        /// </summary>
-        private static string GetBuildBenchmarkTempFolderPath()
-        {
-            var projectRootPath = Directory.GetParent(Application.dataPath).FullName;
-            return Path.Combine(projectRootPath, _buildBenchmarkFolderName);
-        }
-
-        private static string EnsureBuildBenchmarkTempFolderExists()
-        {
-            var folderPath = GetBuildBenchmarkTempFolderPath();
-
-            // In case a previous run's cleanup failed to run (e.g. the editor crashed mid-benchmark), make sure
-            // we start from a clean slate rather than building on top of leftover output.
-            if (Directory.Exists(folderPath))
-            {
-                Directory.Delete(folderPath, true);
-            }
-
-            Directory.CreateDirectory(folderPath);
-            return folderPath;
-        }
-
-        private static void CleanupBuildBenchmarkFolder()
-        {
-            var buildFolderPath = SessionState.GetString(_buildFolderPathKey, string.Empty);
-            SessionState.EraseString(_buildFolderPathKey);
-
-            if (!string.IsNullOrEmpty(buildFolderPath) && Directory.Exists(buildFolderPath))
-            {
-                Directory.Delete(buildFolderPath, true);
-            }
-        }
-
-        /// <summary>
-        /// Full output path (file or directory, depending on <paramref name="buildTarget"/>) to pass as
-        /// <see cref="BuildPlayerOptions.locationPathName"/> for a build into <paramref name="buildFolderPath"/>.
-        /// </summary>
-        private static string GetBuildLocationPathName(string buildFolderPath, BuildTarget buildTarget)
-        {
-            const string buildName = "Benchmark";
-
-            switch (buildTarget)
-            {
-                case BuildTarget.StandaloneWindows:
-                case BuildTarget.StandaloneWindows64:
-                    return Path.Combine(buildFolderPath, buildName + ".exe");
-
-                case BuildTarget.StandaloneOSX:
-                    return Path.Combine(buildFolderPath, buildName + ".app");
-
-                case BuildTarget.Android:
-                    return Path.Combine(buildFolderPath,
-                        EditorUserBuildSettings.exportAsGoogleAndroidProject ? buildName : buildName + ".apk");
-
-                default:
-                    // Covers targets that build into a bare file or directory name (e.g. StandaloneLinux64, iOS's
-                    // Xcode project, WebGL's output folder).
-                    return Path.Combine(buildFolderPath, buildName);
-            }
-        }
-
-        /// <summary>
-        /// Creates a temporary copy of <paramref name="sceneAsset"/> under
-        /// <see cref="_lightmapBenchmarkTempFolderPath"/> (a directory distinct from the original scene's
-        /// directory) and opens it, so the lightmap data this benchmark run generates is written next to the
-        /// temporary copy instead of polluting the original scene's own lightmap data directory. The originally
-        /// open scene(s) are recorded so <see cref="CleanupLightmapBenchmarkScene"/> can restore them afterwards.
-        /// </summary>
-        private static bool TrySetupLightmapBenchmarkScene(SceneAsset sceneAsset)
-        {
-            var originalScenePath = AssetDatabase.GetAssetPath(sceneAsset);
-            if (string.IsNullOrEmpty(originalScenePath))
-            {
-                return false;
-            }
-
-            var tempFolderPath = EnsureLightmapBenchmarkTempFolderExists();
-            var tempScenePath = $"{tempFolderPath}/{Path.GetFileName(originalScenePath)}";
-
-            // In case a previous run's cleanup failed to run (e.g. the editor crashed mid-benchmark), make sure
-            // we start from a clean slate rather than failing to copy over a leftover temporary scene.
-            AssetDatabase.DeleteAsset(tempScenePath);
-
-            if (!AssetDatabase.CopyAsset(originalScenePath, tempScenePath))
-            {
-                return false;
-            }
-
-            // Still closing the real scene at this point (the temporary copy doesn't exist yet), so prompt as
-            // usual.
-            SaveAndCloseOpenScenes(_lightmapOriginalScenePathsKey, promptToSaveModifiedScenes: true);
-            EditorSceneManager.OpenScene(tempScenePath, OpenSceneMode.Single);
-
-            SessionState.SetString(_lightmapTempFolderPathKey, tempFolderPath);
-
-            return true;
-        }
-
-        /// <summary>
-        /// Restores whatever scene(s) were open before <see cref="TrySetupLightmapBenchmarkScene"/>, then deletes
-        /// the temporary scene copy together with the lightmap data directory Unity generated next to it.
-        /// </summary>
-        private static void CleanupLightmapBenchmarkScene()
-        {
-            var tempFolderPath = SessionState.GetString(_lightmapTempFolderPathKey, string.Empty);
-            SessionState.EraseString(_lightmapTempFolderPathKey);
-
-            // The scene being closed here is the temporary lightmap benchmark copy, dirtied by Lightmapping.Bake()
-            // - not something the user edited, and about to be deleted below regardless. Resolve its dirty state
-            // by saving it silently instead of prompting, since prompting would show a confusingly
-            // identical-looking dialog for a scene that shares the real scene's file name (whether those changes
-            // end up saved to the soon-to-be-deleted file or not makes no difference).
-            RestoreOpenScenes(_lightmapOriginalScenePathsKey, promptToSaveModifiedScenes: false);
-
-            if (!string.IsNullOrEmpty(tempFolderPath) && AssetDatabase.IsValidFolder(tempFolderPath))
-            {
-                AssetDatabase.DeleteAsset(tempFolderPath);
-            }
-
-            // Also remove the parent "Assets/Temp" folder (and its .meta) if we're the ones who created it and
-            // nothing else has since put anything else in there, so it doesn't linger behind after the benchmark.
-            var parentTempFolderPath = _assetsFolderPath + "/Temp";
-            if (AssetDatabase.IsValidFolder(parentTempFolderPath) && IsFolderEmpty(parentTempFolderPath))
-            {
-                AssetDatabase.DeleteAsset(parentTempFolderPath);
-            }
-
-            AssetDatabase.Refresh();
-        }
-
-        private static string EnsureLightmapBenchmarkTempFolderExists()
-        {
-            if (!AssetDatabase.IsValidFolder(_assetsFolderPath + "/Temp"))
-            {
-                AssetDatabase.CreateFolder(_assetsFolderPath, "Temp");
-            }
-
-            if (!AssetDatabase.IsValidFolder(_lightmapBenchmarkTempFolderPath))
-            {
-                AssetDatabase.CreateFolder(_assetsFolderPath + "/Temp", "LightmapBenchmarkTemp");
-            }
-
-            return _lightmapBenchmarkTempFolderPath;
-        }
-
-        /// <summary>
-        /// Whether <paramref name="assetsRelativeFolderPath"/> (a folder path relative to the project, e.g.
-        /// "Assets/Temp") contains no files or subfolders. Checked directly on disk rather than via
-        /// <see cref="AssetDatabase"/>, since an empty folder is still a valid tracked asset (with its own
-        /// .meta file) but wouldn't be returned by an asset search under itself.
-        /// </summary>
-        private static bool IsFolderEmpty(string assetsRelativeFolderPath)
-        {
-            var relativeToAssets = assetsRelativeFolderPath.Substring(_assetsFolderPath.Length).TrimStart('/', '\\');
-            var absolutePath = Path.Combine(Application.dataPath, relativeToAssets);
-
-            return !Directory.Exists(absolutePath) || Directory.GetFileSystemEntries(absolutePath).Length == 0;
-        }
-
-        /// <summary>
-        /// Forces a full reimport of everything under the "Assets" folder, never touching "Packages".
-        /// </summary>
-        private static void ReimportAssetsFolder()
-        {
-            AssetDatabase.ImportAsset(_assetsFolderPath,
-                ImportAssetOptions.ImportRecursive | ImportAssetOptions.ForceUpdate |
-                ImportAssetOptions.ForceSynchronousImport);
-        }
-
-        /// <summary>
-        /// Closes every currently open scene and records their paths (under <paramref name="sessionKey"/>) so
-        /// <see cref="RestoreOpenScenes"/> can reopen them later.
-        /// </summary>
-        /// <param name="sessionKey">Identifies the matching <see cref="RestoreOpenScenes"/> call.</param>
-        /// <param name="promptToSaveModifiedScenes">
-        /// Whether to show Unity's normal blocking "Do you want to save the changes..." modal if the currently
-        /// open scene(s) are dirty (same prompt the user would get anyway when Unity is about to discard/replace
-        /// them), rather than silently saving any unsaved modifications without asking. Pass <c>false</c> only
-        /// when the currently open scene is known to be disposable (e.g. the temporary lightmap benchmark scene
-        /// copy, whose containing folder gets deleted right afterwards regardless of whether it got saved) and
-        /// shares its file name with the real scene, so prompting would show a confusingly identical-looking
-        /// dialog about a scene the user never actually edited.
-        /// </param>
-        private static void SaveAndCloseOpenScenes(string sessionKey, bool promptToSaveModifiedScenes)
-        {
-            var openScenePaths = new List<string>();
-            for (var i = 0; i < EditorSceneManager.sceneCount; i++)
-            {
-                var path = EditorSceneManager.GetSceneAt(i).path;
-                if (!string.IsNullOrEmpty(path))
-                {
-                    openScenePaths.Add(path);
-                }
-            }
-
-            SessionState.SetString(sessionKey, string.Join(";", openScenePaths));
-
-            if (promptToSaveModifiedScenes)
-            {
-                // We proceed with the benchmark regardless of the user's choice (save, don't save).
-                EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo();
-            }
-            else
-            {
-                SaveModifiedOpenScenesWithoutPrompting();
-            }
-
-            EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
-        }
-
-        /// <summary>
-        /// Reopens whatever scene(s) were open before the matching <see cref="SaveAndCloseOpenScenes"/> call
-        /// (identified by <paramref name="sessionKey"/>) closed them.
-        /// </summary>
-        /// <param name="sessionKey">Identifies the matching <see cref="SaveAndCloseOpenScenes"/> call.</param>
-        /// <param name="promptToSaveModifiedScenes">
-        /// See <see cref="SaveAndCloseOpenScenes"/>. Either way, resolving the currently open scene(s)' dirty
-        /// state (by prompting or by saving silently) before reopening matters: without it,
-        /// <see cref="EditorSceneManager.OpenScene"/> below would silently fail to switch away from a dirty scene
-        /// (or block on a modal save prompt), so that scene would still be the active one by the time e.g.
-        /// <see cref="CleanupLightmapBenchmarkScene"/> deletes its containing temp folder - and the next
-        /// <see cref="SaveAndCloseOpenScenes"/> call would then record that now-deleted scene's path as the
-        /// "originally open" scene to restore, causing a "Scene file not found" error on the next benchmark run.
-        /// </param>
-        private static void RestoreOpenScenes(string sessionKey, bool promptToSaveModifiedScenes)
-        {
-            var joinedPaths = SessionState.GetString(sessionKey, string.Empty);
-            SessionState.EraseString(sessionKey);
-
-            if (string.IsNullOrEmpty(joinedPaths))
-            {
-                return;
-            }
-
-            if (promptToSaveModifiedScenes)
-            {
-                EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo();
-            }
-            else
-            {
-                SaveModifiedOpenScenesWithoutPrompting();
-            }
-
-            var paths = joinedPaths.Split(';');
-            for (var i = 0; i < paths.Length; i++)
-            {
-                if (string.IsNullOrEmpty(paths[i]))
-                {
-                    continue;
-                }
-
-                EditorSceneManager.OpenScene(paths[i], i == 0 ? OpenSceneMode.Single : OpenSceneMode.Additive);
-            }
-        }
-
-        /// <summary>
-        /// Silently saves every currently open dirty scene to its own path (no confirmation dialog, unlike
-        /// <see cref="EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo"/>), so a subsequent
-        /// <see cref="EditorSceneManager.NewScene(NewSceneSetup, NewSceneMode)"/> or
-        /// <see cref="EditorSceneManager.OpenScene"/> call can switch away from it without Unity blocking on (or
-        /// silently no-oping because of) its unsaved changes. Used when the currently open scene is known to be
-        /// disposable (its containing folder is about to be deleted anyway), so the user is never prompted about
-        /// changes they didn't make and don't need to review - whether those changes end up saved to the
-        /// soon-to-be-deleted file or not makes no difference.
-        /// </summary>
-        private static void SaveModifiedOpenScenesWithoutPrompting()
-        {
-            for (var i = 0; i < SceneManager.sceneCount; i++)
-            {
-                var scene = SceneManager.GetSceneAt(i);
-                if (scene.isDirty)
-                {
-                    EditorSceneManager.SaveScene(scene);
-                }
-            }
-        }
-
-        private static void StepPreparing()
-        {
-            if (EditorApplication.timeSinceStartup - GetPhaseStartTime() < _preparationDelayInSeconds)
-            {
-                return;
-            }
-
-            BenchmarkCategoryTimeTracker.Start(BenchmarkCategory.PlayModeSwitch);
-            EditorApplication.EnterPlaymode();
-
-            TransitionTo(BenchmarkState.WaitingForPlayMode);
-        }
-
-        private static void StepWaitingForPlayMode()
-        {
-            if (!EditorApplication.isPlaying)
-            {
-                if (HasPhaseTimedOut())
-                {
-                    Debug.LogWarning("Timeout while waiting for play mode to enter.");
-                    Abort();
-                }
-
-                return;
-            }
-
-            Debug.Log("Entered play mode.");
-
-            EditorApplication.ExitPlaymode();
-
-            TransitionTo(BenchmarkState.WaitingForExitPlayMode);
-        }
-
-        private static void StepWaitingForExitPlayMode()
-        {
-            if (EditorApplication.isPlayingOrWillChangePlaymode)
-            {
-                if (HasPhaseTimedOut())
-                {
-                    Debug.LogWarning("Timeout while waiting for play mode to exit.");
-                    Abort();
-                }
-
-                return;
-            }
-
-            var switchElapsed = BenchmarkCategoryTimeTracker.Stop(BenchmarkCategory.PlayModeSwitch);
-
-            var iteration = GetPlayModeSwitchIteration() + 1;
-            var count = GetPlayModeSwitchCount();
-            SetPlayModeSwitchIteration(iteration);
-
-            Debug.Log($"Exited play mode ({iteration}/{count}), took {switchElapsed}.");
-
-            if (iteration < count)
-            {
-                TransitionTo(BenchmarkState.Preparing);
-                return;
-            }
-
             var totalDuration = BenchmarkCategoryTimeTracker.GetTotalDurationFromAllCategories();
 
             Debug.Log("<color=red>Finished benchmark...</color>");
             Debug.Log($"Benchmark total time: {totalDuration}");
             Debug.Log(BuildCategoryBreakdownLog(BenchmarkCategoryTimeTracker.GetAllTotals()));
-
-            Finish();
         }
 
         private static string BuildCategoryBreakdownLog(IReadOnlyDictionary<BenchmarkCategory, TimeSpan> totals)
@@ -1086,172 +304,71 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
             return builder.ToString();
         }
 
-        private static void TransitionTo(BenchmarkState state)
-        {
-            SetState(state);
-            SetPhaseStartTime(EditorApplication.timeSinceStartup);
-        }
-
-        private static void Abort()
-        {
-            CleanUpAfterEarlyStop();
-            Finish();
-        }
-
         /// <summary>
         /// Best-effort cleanup for a benchmark ending before it reaches its normal final state (via
-        /// <see cref="StopBenchmark"/> or a phase timing out), so the editor isn't left with scenes closed or
-        /// swapped out, or temporary build/lightmap directories still lying around. Each step below is a no-op
-        /// if its corresponding phase either hadn't started yet or had already cleaned up after itself normally,
-        /// so this is safe to call regardless of which phase the run was in when it stopped.
+        /// <see cref="StopBenchmark"/> or a category reporting <see cref="BenchmarkCategoryTickResult.Failed"/>).
+        /// Calls <see cref="IBenchmarkCategoryRunner.Abort"/> on every category unconditionally (not just the
+        /// currently active one) - every implementation is required to treat that as a safe no-op if it never
+        /// started, or had already finished (and cleaned up after itself) normally, so this is safe to call
+        /// regardless of which category was active when the run stopped.
         /// </summary>
-        private static void CleanUpAfterEarlyStop()
+        private static void AbortBenchmark()
         {
-            if (EditorApplication.isPlayingOrWillChangePlaymode)
+            foreach (var runner in _categoryRunners)
             {
-                EditorApplication.ExitPlaymode();
+                runner.Abort();
             }
 
-            CleanupLightmapBenchmarkScene();
-
-            // Only relevant if stopped mid asset-import (the lightmap/build phases, if reached, already restore
-            // the real scene themselves before proceeding).
-            RestoreOpenScenes(_originalScenePathsKey, promptToSaveModifiedScenes: true);
-
-            CleanupBuildBenchmarkFolder();
+            Finish();
         }
 
         private static void Finish()
         {
-            SetState(BenchmarkState.None);
+            SetState(OrchestratorState.None);
             EditorApplication.update -= Step;
 
             BenchmarkFinished?.Invoke();
         }
 
-        private static bool HasPhaseTimedOut()
+        private static int ClampToAtLeastOne(int value, string parameterName)
         {
-            return EditorApplication.timeSinceStartup - GetPhaseStartTime() > _maxLoopTimeInSeconds;
+            if (value < 1)
+            {
+                Debug.LogWarning($"{parameterName} must be at least 1, got {value}. Using 1 instead.");
+                return 1;
+            }
+
+            return value;
         }
 
-        private static BenchmarkState GetState()
+        private static OrchestratorState GetState()
         {
-            return (BenchmarkState) SessionState.GetInt(_stateKey, (int) BenchmarkState.None);
+            return (OrchestratorState) SessionState.GetInt(_stateKey, (int) OrchestratorState.None);
         }
 
-        private static void SetState(BenchmarkState state)
+        private static void SetState(OrchestratorState state)
         {
             SessionState.SetInt(_stateKey, (int) state);
         }
 
-        private static double GetPhaseStartTime()
+        private static int GetCurrentCategoryIndex()
         {
-            return double.Parse(SessionState.GetString(_phaseStartTimeKey, "0"), CultureInfo.InvariantCulture);
+            return SessionState.GetInt(_currentCategoryIndexKey, 0);
         }
 
-        private static void SetPhaseStartTime(double time)
+        private static void SetCurrentCategoryIndex(int index)
         {
-            SessionState.SetString(_phaseStartTimeKey, time.ToString(CultureInfo.InvariantCulture));
+            SessionState.SetInt(_currentCategoryIndexKey, index);
         }
 
-        private static int GetPlayModeSwitchCount()
+        private static int GetRunCount(BenchmarkCategory category)
         {
-            return SessionState.GetInt(_playModeSwitchCountKey, _defaultPlayModeSwitchCount);
+            return SessionState.GetInt(_runCountKeyPrefix + category, 1);
         }
 
-        private static void SetPlayModeSwitchCount(int count)
+        private static void SetRunCount(BenchmarkCategory category, int count)
         {
-            SessionState.SetInt(_playModeSwitchCountKey, count);
-        }
-
-        private static int GetPlayModeSwitchIteration()
-        {
-            return SessionState.GetInt(_playModeSwitchIterationKey, 0);
-        }
-
-        private static void SetPlayModeSwitchIteration(int iteration)
-        {
-            SessionState.SetInt(_playModeSwitchIterationKey, iteration);
-        }
-
-        private static int GetCompilationRunCount()
-        {
-            return SessionState.GetInt(_compilationRunCountKey, _defaultCompilationRunCount);
-        }
-
-        private static void SetCompilationRunCount(int count)
-        {
-            SessionState.SetInt(_compilationRunCountKey, count);
-        }
-
-        private static int GetCompilationRunIteration()
-        {
-            return SessionState.GetInt(_compilationRunIterationKey, 0);
-        }
-
-        private static void SetCompilationRunIteration(int iteration)
-        {
-            SessionState.SetInt(_compilationRunIterationKey, iteration);
-        }
-
-        private static int GetAssetImportRunCount()
-        {
-            return SessionState.GetInt(_assetImportRunCountKey, _defaultAssetImportRunCount);
-        }
-
-        private static void SetAssetImportRunCount(int count)
-        {
-            SessionState.SetInt(_assetImportRunCountKey, count);
-        }
-
-        private static int GetAssetImportRunIteration()
-        {
-            return SessionState.GetInt(_assetImportRunIterationKey, 0);
-        }
-
-        private static void SetAssetImportRunIteration(int iteration)
-        {
-            SessionState.SetInt(_assetImportRunIterationKey, iteration);
-        }
-
-        private static int GetLightmapBakeRunCount()
-        {
-            return SessionState.GetInt(_lightmapBakeRunCountKey, _defaultLightmapBakeRunCount);
-        }
-
-        private static void SetLightmapBakeRunCount(int count)
-        {
-            SessionState.SetInt(_lightmapBakeRunCountKey, count);
-        }
-
-        private static int GetLightmapBakeRunIteration()
-        {
-            return SessionState.GetInt(_lightmapBakeRunIterationKey, 0);
-        }
-
-        private static void SetLightmapBakeRunIteration(int iteration)
-        {
-            SessionState.SetInt(_lightmapBakeRunIterationKey, iteration);
-        }
-
-        private static int GetBuildRunCount()
-        {
-            return SessionState.GetInt(_buildRunCountKey, _defaultBuildRunCount);
-        }
-
-        private static void SetBuildRunCount(int count)
-        {
-            SessionState.SetInt(_buildRunCountKey, count);
-        }
-
-        private static int GetBuildRunIteration()
-        {
-            return SessionState.GetInt(_buildRunIterationKey, 0);
-        }
-
-        private static void SetBuildRunIteration(int iteration)
-        {
-            SessionState.SetInt(_buildRunIterationKey, iteration);
+            SessionState.SetInt(_runCountKeyPrefix + category, count);
         }
 
         private static bool TryDisableConsoleClearOnPlay()
