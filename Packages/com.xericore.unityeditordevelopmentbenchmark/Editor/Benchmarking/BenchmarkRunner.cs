@@ -646,6 +646,16 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
         /// Reopens whatever scene(s) were open before the matching <see cref="SaveAndCloseOpenScenes"/> call
         /// (identified by <paramref name="sessionKey"/>) closed them.
         /// </summary>
+        /// <remarks>
+        /// Resolves any unsaved modifications on the currently open scene(s) first (same prompt-avoidance as
+        /// <see cref="SaveAndCloseOpenScenes"/>). This matters in particular after lightmap baking, which leaves
+        /// the temporary benchmark scene dirty: without this, <see cref="EditorSceneManager.OpenScene"/> below
+        /// would silently fail to switch away from it (or block on a modal save prompt), so the temporary scene
+        /// would still be the active one by the time its containing folder gets deleted in
+        /// <see cref="CleanupLightmapBenchmarkScene"/> - and the next <see cref="SaveAndCloseOpenScenes"/> call
+        /// would then record that now-deleted temporary scene's path as the "originally open" scene to restore,
+        /// causing a "Scene file not found" error on the next benchmark run.
+        /// </remarks>
         private static void RestoreOpenScenes(string sessionKey)
         {
             var joinedPaths = SessionState.GetString(sessionKey, string.Empty);
@@ -655,6 +665,8 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
             {
                 return;
             }
+
+            EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo();
 
             var paths = joinedPaths.Split(';');
             for (var i = 0; i < paths.Length; i++)
