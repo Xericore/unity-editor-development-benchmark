@@ -283,22 +283,29 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
 
             Debug.Log("<color=red>Finished benchmark...</color>");
             Debug.Log($"Benchmark total time: {totalDuration}");
-            Debug.Log(BuildCategoryBreakdownLog(BenchmarkCategoryTimeTracker.GetAllTotals()));
+            Debug.Log(BuildCategoryBreakdownLog(BenchmarkCategoryTimeTracker.GetAllAverages()));
         }
 
-        private static string BuildCategoryBreakdownLog(IReadOnlyDictionary<BenchmarkCategory, TimeSpan> totals)
+        /// <summary>
+        /// Logs each category's <em>average</em> duration (see <see cref="BenchmarkCategoryTimeTracker.GetAverage"/>),
+        /// not its raw total - categories run a different number of times each (e.g. 3 play mode switches vs 1
+        /// build by default), which would otherwise make their raw totals misleading to compare directly, both
+        /// against each other and against <see cref="BenchmarkCategoryTimeTracker.GetDurationColor"/>'s color
+        /// coding.
+        /// </summary>
+        private static string BuildCategoryBreakdownLog(IReadOnlyDictionary<BenchmarkCategory, TimeSpan> averages)
         {
-            var minSeconds = totals.Values.Min(t => t.TotalSeconds);
-            var maxSeconds = totals.Values.Max(t => t.TotalSeconds);
+            var minSeconds = averages.Values.Min(t => t.TotalSeconds);
+            var maxSeconds = averages.Values.Max(t => t.TotalSeconds);
 
             var builder = new StringBuilder();
-            builder.AppendLine("Category breakdown:");
+            builder.AppendLine("Category breakdown (average per run):");
 
-            foreach (var (category, total) in totals.OrderBy(pair => pair.Key.ToString()))
+            foreach (var (category, average) in averages.OrderBy(pair => pair.Key.ToString()))
             {
-                var color = BenchmarkCategoryTimeTracker.GetDurationColor(total.TotalSeconds, minSeconds, maxSeconds);
+                var color = BenchmarkCategoryTimeTracker.GetDurationColor(average.TotalSeconds, minSeconds, maxSeconds);
                 var colorHex = ColorUtility.ToHtmlStringRGB(color);
-                builder.AppendLine($"  <color=#{colorHex}>{category,-16} {total:hh\\:mm\\:ss\\.fff}</color>");
+                builder.AppendLine($"  <color=#{colorHex}>{category,-16} {average:hh\\:mm\\:ss\\.fff}</color>");
             }
 
             return builder.ToString();

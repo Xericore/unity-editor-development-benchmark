@@ -97,9 +97,12 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
         {
             var categoryResults = _results.Where(result => !result.IsTotal).ToList();
 
-            var minSeconds = categoryResults.Count > 0 ? categoryResults.Min(result => result.Duration.TotalSeconds) : 0d;
-            var maxSeconds = categoryResults.Count > 0 ? categoryResults.Max(result => result.Duration.TotalSeconds) : 0d;
-            var totalSeconds = _results.Last().Duration.TotalSeconds;
+            // Color-coded (and ranged) by average duration, since that's what the Duration column displays; the
+            // Ratio column separately uses each row's TotalDuration, so a category's ratio still reflects how
+            // much of the whole run it actually consumed regardless of how many times it ran.
+            var minSeconds = categoryResults.Count > 0 ? categoryResults.Min(result => result.AverageDuration.TotalSeconds) : 0d;
+            var maxSeconds = categoryResults.Count > 0 ? categoryResults.Max(result => result.AverageDuration.TotalSeconds) : 0d;
+            var totalSeconds = _results.Last().TotalDuration.TotalSeconds;
 
             var table = new MultiColumnListView
             {
@@ -126,7 +129,7 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
 
             table.columns.Add(new Column
             {
-                title = "Duration",
+                title = "Avg. Duration",
                 width = 130,
                 makeCell = () => new Label(),
                 bindCell = (element, i) =>
@@ -135,11 +138,11 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
                     var label = (Label) element;
                     label.style.paddingLeft = 8;
                     label.style.unityFontStyleAndWeight = data.IsTotal ? FontStyle.Bold : FontStyle.Normal;
-                    label.text = FormatTimeSpan(data.Duration);
+                    label.text = FormatTimeSpan(data.AverageDuration);
                     label.style.color = data.IsTotal
                         ? new StyleColor(StyleKeyword.Null)
                         : new StyleColor(BenchmarkCategoryTimeTracker.GetDurationColor(
-                            data.Duration.TotalSeconds, minSeconds, maxSeconds));
+                            data.AverageDuration.TotalSeconds, minSeconds, maxSeconds));
                 }
             });
 
@@ -153,7 +156,7 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
                     var data = _results[i];
                     var progressBar = (ProgressBar) element;
 
-                    var ratio = totalSeconds > 0d ? data.Duration.TotalSeconds / totalSeconds : 0d;
+                    var ratio = totalSeconds > 0d ? data.TotalDuration.TotalSeconds / totalSeconds : 0d;
                     progressBar.value = (float) ratio * 100f;
                     progressBar.title = $"{ratio:P1}";
 
@@ -163,7 +166,7 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
                         progressFill.style.backgroundColor = data.IsTotal
                             ? new StyleColor(StyleKeyword.Null)
                             : new StyleColor(BenchmarkCategoryTimeTracker.GetDurationColor(
-                                data.Duration.TotalSeconds, minSeconds, maxSeconds));
+                                data.AverageDuration.TotalSeconds, minSeconds, maxSeconds));
                     }
                 }
             });
@@ -174,20 +177,23 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
         /// <summary>
         /// One row per <see cref="BenchmarkCategory"/> (ordered the same way as
         /// <see cref="BenchmarkRunner"/>'s console log breakdown) plus a trailing "Total" row, sourced from
-        /// <see cref="BenchmarkCategoryTimeTracker"/>'s running totals for the last (or currently in-progress)
-        /// benchmark run.
+        /// <see cref="BenchmarkCategoryTimeTracker"/>'s running totals/averages for the last (or currently
+        /// in-progress) benchmark run.
         /// </summary>
         private static List<BenchmarkCategoryResultData> BuildResultData()
         {
-            var totals = BenchmarkCategoryTimeTracker.GetAllTotals();
-
-            var results = totals
-                .OrderBy(pair => pair.Key.ToString())
-                .Select(pair => new BenchmarkCategoryResultData(pair.Key.ToString(), pair.Value, isTotal: false))
+            var results = Enum.GetValues(typeof(BenchmarkCategory))
+                .Cast<BenchmarkCategory>()
+                .OrderBy(category => category.ToString())
+                .Select(category => new BenchmarkCategoryResultData(
+                    category.ToString(),
+                    BenchmarkCategoryTimeTracker.GetAverage(category),
+                    BenchmarkCategoryTimeTracker.GetTotal(category),
+                    isTotal: false))
                 .ToList();
 
             var totalDuration = BenchmarkCategoryTimeTracker.GetTotalDurationFromAllCategories();
-            results.Add(new BenchmarkCategoryResultData("Total", totalDuration, isTotal: true));
+            results.Add(new BenchmarkCategoryResultData("Total", totalDuration, totalDuration, isTotal: true));
 
             return results;
         }

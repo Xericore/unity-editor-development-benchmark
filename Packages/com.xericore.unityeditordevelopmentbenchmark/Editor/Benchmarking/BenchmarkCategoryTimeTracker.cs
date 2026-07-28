@@ -39,21 +39,23 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
                 CultureInfo.InvariantCulture);
             var elapsed = TimeSpan.FromSeconds(EditorApplication.timeSinceStartup - startTime);
 
-            var newTotal = GetTotal(category) + elapsed;
-            SessionState.SetString(TotalKey(category), newTotal.TotalSeconds.ToString(CultureInfo.InvariantCulture));
+            AddDuration(category, elapsed);
 
             return elapsed;
         }
 
         /// <summary>
-        /// Adds <paramref name="duration"/> directly to <paramref name="category"/>'s running total, for categories
-        /// whose duration is measured externally (e.g. <see cref="UnityEditorDevelopmentBenchmark.Editor.Util.AssemblyReloadTimer"/>'s
+        /// Adds <paramref name="duration"/> directly to <paramref name="category"/>'s running total (and counts it
+        /// as one more sample towards <see cref="GetAverage"/>), for categories whose duration is measured
+        /// externally (e.g. <see cref="UnityEditorDevelopmentBenchmark.Editor.Util.AssemblyReloadTimer"/>'s
         /// reconstructed domain reload duration) rather than via a matching <see cref="Start"/>/<see cref="Stop"/> pair.
         /// </summary>
         public static void AddDuration(BenchmarkCategory category, TimeSpan duration)
         {
             var newTotal = GetTotal(category) + duration;
             SessionState.SetString(TotalKey(category), newTotal.TotalSeconds.ToString(CultureInfo.InvariantCulture));
+
+            SessionState.SetInt(SampleCountKey(category), GetSampleCount(category) + 1);
         }
 
         /// <summary>
@@ -64,6 +66,30 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
             var totalSeconds = double.Parse(SessionState.GetString(TotalKey(category), "0"),
                 CultureInfo.InvariantCulture);
             return TimeSpan.FromSeconds(totalSeconds);
+        }
+
+        /// <summary>
+        /// How many spans have been recorded for <paramref name="category"/> (via <see cref="Stop"/> or
+        /// <see cref="AddDuration"/>) since it was last reset - i.e. how many times this category's timed
+        /// operation actually ran this benchmark run.
+        /// </summary>
+        public static int GetSampleCount(BenchmarkCategory category)
+        {
+            return SessionState.GetInt(SampleCountKey(category), 0);
+        }
+
+        /// <summary>
+        /// <see cref="GetTotal"/> divided by <see cref="GetSampleCount"/> - the average duration of one occurrence
+        /// of <paramref name="category"/>'s timed operation this run (e.g. one script recompilation, one play
+        /// mode switch), rather than the sum across every occurrence. This is what should be displayed/compared
+        /// per category, since categories run a different number of times each (e.g. 3 play mode switches vs 1
+        /// build by default), which would otherwise make their raw totals misleading to compare directly.
+        /// <see cref="TimeSpan.Zero"/> if the category never ran.
+        /// </summary>
+        public static TimeSpan GetAverage(BenchmarkCategory category)
+        {
+            var sampleCount = GetSampleCount(category);
+            return sampleCount > 0 ? TimeSpan.FromTicks(GetTotal(category).Ticks / sampleCount) : TimeSpan.Zero;
         }
 
         /// <summary>
@@ -80,6 +106,22 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
             }
 
             return totals;
+        }
+
+        /// <summary>
+        /// Running averages for every <see cref="BenchmarkCategory"/> (see <see cref="GetAverage"/>), including
+        /// categories that are still stubs and therefore always report <see cref="TimeSpan.Zero"/>.
+        /// </summary>
+        public static IReadOnlyDictionary<BenchmarkCategory, TimeSpan> GetAllAverages()
+        {
+            var averages = new Dictionary<BenchmarkCategory, TimeSpan>();
+
+            foreach (BenchmarkCategory category in Enum.GetValues(typeof(BenchmarkCategory)))
+            {
+                averages[category] = GetAverage(category);
+            }
+
+            return averages;
         }
 
         /// <summary>
@@ -107,6 +149,10 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
         {
             SessionState.EraseString(StartTimeKey(category));
             SessionState.EraseString(TotalKey(category));
+
+            // SessionState has no EraseInt; explicitly setting back to 0 has the same effect, since GetInt already
+            // falls back to 0 for a key that was never set.
+            SessionState.SetInt(SampleCountKey(category), 0);
         }
 
         /// <summary>
@@ -145,6 +191,11 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
         private static string TotalKey(BenchmarkCategory category)
         {
             return _keyPrefix + category + ".Total";
+        }
+
+        private static string SampleCountKey(BenchmarkCategory category)
+        {
+            return _keyPrefix + category + ".SampleCount";
         }
     }
 }
