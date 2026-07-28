@@ -8,12 +8,12 @@ using UnityEngine.UIElements;
 namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
 {
     /// <summary>
-    /// Companion window to <see cref="UserWaitTimeEditorWindow"/>: lets you kick off <see cref="BenchmarkRunner"/>
-    /// from a button instead of the menu/command line, and shows the same kind of category/progress-bar table,
-    /// but for the last (or currently in-progress) automated benchmark run rather than live accumulated wait
-    /// time. Rows are color-coded the same way as <see cref="BenchmarkRunner"/>'s console log breakdown (green
-    /// shortest, red longest, relative to the other categories in that run), and a bold "Total" row shows the
-    /// overall benchmark duration.
+    /// Companion window to <see cref="UserWaitTimeEditorWindow"/>: lets you kick off (and, while one is running,
+    /// stop) <see cref="BenchmarkRunner"/> from a single button instead of the menu/command line, and shows the
+    /// same kind of category/progress-bar table, but for the last (or currently in-progress) automated benchmark
+    /// run rather than live accumulated wait time. Rows are color-coded the same way as
+    /// <see cref="BenchmarkRunner"/>'s console log breakdown (green shortest, red longest, relative to the other
+    /// categories in that run), and a bold "Total" row shows the overall benchmark duration.
     /// </summary>
     public class BenchmarkRunnerEditorWindow : EditorWindow
     {
@@ -62,21 +62,31 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
 
             var isRunning = BenchmarkRunner.IsRunning;
 
-            var startBenchmarkButton = new Button
+            var benchmarkButton = new Button
             {
-                name = "startBenchmarkButton",
-                text = isRunning ? "Benchmark Running..." : "Start Benchmark",
+                name = isRunning ? "stopBenchmarkButton" : "startBenchmarkButton",
+                text = isRunning ? "Stop Benchmark" : "Start Benchmark",
                 style = {maxWidth = new StyleLength(200)}
             };
 
-            startBenchmarkButton.SetEnabled(!isRunning);
-            startBenchmarkButton.clicked += () =>
+            if (isRunning)
             {
-                BenchmarkRunner.StartBenchmark();
-                RefreshAndDrawData(root);
-            };
+                benchmarkButton.clicked += () =>
+                {
+                    BenchmarkRunner.StopBenchmark();
+                    RefreshAndDrawData(root);
+                };
+            }
+            else
+            {
+                benchmarkButton.clicked += () =>
+                {
+                    BenchmarkRunner.StartBenchmark();
+                    RefreshAndDrawData(root);
+                };
+            }
 
-            buttonRow.Add(startBenchmarkButton);
+            buttonRow.Add(benchmarkButton);
 
             root.Add(buttonRow);
 

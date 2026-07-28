@@ -12,6 +12,7 @@ using UnityEditor.Compilation;
 using UnityEditor.SceneManagement;
 using UnityEditorDevelopmentBenchmark.Editor.Util;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 using Debug = UnityEngine.Debug;
 
 namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
@@ -323,6 +324,27 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
             EditorApplication.update += Step;
         }
 
+        /// <summary>
+        /// Stops the currently in-progress benchmark run early (e.g. in response to the user clicking
+        /// "Stop Benchmark" in <see cref="BenchmarkRunnerEditorWindow"/>), doing the same best-effort cleanup as a
+        /// phase timing out via <see cref="HasPhaseTimedOut"/> would. Categories that hadn't finished yet simply
+        /// keep whatever partial total they'd accumulated so far.
+        /// </summary>
+        [MenuItem("Window/Analysis/Stop Benchmark")]
+        [UsedImplicitly]
+        public static void StopBenchmark()
+        {
+            if (GetState() == BenchmarkState.None)
+            {
+                Debug.LogWarning("No benchmark is currently running.");
+                return;
+            }
+
+            Debug.LogWarning("<color=orange>Benchmark stopped by user.</color>");
+
+            Abort();
+        }
+
         private static void Step()
         {
             switch (GetState())
@@ -491,7 +513,9 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
 
         private static void StepPreparingAssetImport()
         {
-            SaveAndCloseOpenScenes(_originalScenePathsKey);
+            // The scene(s) being closed here are whatever the user actually had open (the real scene), so prompt
+            // to save as usual rather than silently discarding their changes.
+            SaveAndCloseOpenScenes(_originalScenePathsKey, promptToSaveModifiedScenes: true);
             TransitionTo(BenchmarkState.RequestingAssetImport);
         }
 
@@ -544,7 +568,8 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
                 return;
             }
 
-            RestoreOpenScenes(_originalScenePathsKey);
+            // Reopening the real scene here too, so prompt as usual.
+            RestoreOpenScenes(_originalScenePathsKey, promptToSaveModifiedScenes: true);
             TransitionTo(BenchmarkState.PreparingLightmapBake);
         }
 
@@ -785,7 +810,9 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
                 return false;
             }
 
-            SaveAndCloseOpenScenes(_lightmapOriginalScenePathsKey);
+            // Still closing the real scene at this point (the temporary copy doesn't exist yet), so prompt as
+            // usual.
+            SaveAndCloseOpenScenes(_lightmapOriginalScenePathsKey, promptToSaveModifiedScenes: true);
             EditorSceneManager.OpenScene(tempScenePath, OpenSceneMode.Single);
 
             SessionState.SetString(_lightmapTempFolderPathKey, tempFolderPath);
@@ -802,7 +829,12 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
             var tempFolderPath = SessionState.GetString(_lightmapTempFolderPathKey, string.Empty);
             SessionState.EraseString(_lightmapTempFolderPathKey);
 
-            RestoreOpenScenes(_lightmapOriginalScenePathsKey);
+            // The scene being closed here is the temporary lightmap benchmark copy, dirtied by Lightmapping.Bake()
+            // - not something the user edited, and about to be deleted below regardless. Resolve its dirty state
+            // by saving it silently instead of prompting, since prompting would show a confusingly
+            // identical-looking dialog for a scene that shares the real scene's file name (whether those changes
+            // end up saved to the soon-to-be-deleted file or not makes no difference).
+            RestoreOpenScenes(_lightmapOriginalScenePathsKey, promptToSaveModifiedScenes: false);
 
             if (!string.IsNullOrEmpty(tempFolderPath) && AssetDatabase.IsValidFolder(tempFolderPath))
             {
@@ -861,12 +893,19 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
 
         /// <summary>
         /// Closes every currently open scene and records their paths (under <paramref name="sessionKey"/>) so
-        /// <see cref="RestoreOpenScenes"/> can reopen them later. Used before operations (forcing an asset
-        /// reimport, opening a temporary scene for the lightmap baking benchmark) that would otherwise cause Unity
-        /// to detect the open scene file(s) as "changed on disk" and prompt the user with a blocking modal dialog
-        /// asking whether to reload them.
+        /// <see cref="RestoreOpenScenes"/> can reopen them later.
         /// </summary>
-        private static void SaveAndCloseOpenScenes(string sessionKey)
+        /// <param name="sessionKey">Identifies the matching <see cref="RestoreOpenScenes"/> call.</param>
+        /// <param name="promptToSaveModifiedScenes">
+        /// Whether to show Unity's normal blocking "Do you want to save the changes..." modal if the currently
+        /// open scene(s) are dirty (same prompt the user would get anyway when Unity is about to discard/replace
+        /// them), rather than silently saving any unsaved modifications without asking. Pass <c>false</c> only
+        /// when the currently open scene is known to be disposable (e.g. the temporary lightmap benchmark scene
+        /// copy, whose containing folder gets deleted right afterwards regardless of whether it got saved) and
+        /// shares its file name with the real scene, so prompting would show a confusingly identical-looking
+        /// dialog about a scene the user never actually edited.
+        /// </param>
+        private static void SaveAndCloseOpenScenes(string sessionKey, bool promptToSaveModifiedScenes)
         {
             var openScenePaths = new List<string>();
             for (var i = 0; i < EditorSceneManager.sceneCount; i++)
@@ -880,9 +919,15 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
 
             SessionState.SetString(sessionKey, string.Join(";", openScenePaths));
 
-            // Same prompt the user would get anyway when Unity is about to discard/replace the open scene(s).
-            // We proceed with the benchmark regardless of the user's choice (save, don't save).
-            EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo();
+            if (promptToSaveModifiedScenes)
+            {
+                // We proceed with the benchmark regardless of the user's choice (save, don't save).
+                EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo();
+            }
+            else
+            {
+                SaveModifiedOpenScenesWithoutPrompting();
+            }
 
             EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
         }
@@ -891,17 +936,17 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
         /// Reopens whatever scene(s) were open before the matching <see cref="SaveAndCloseOpenScenes"/> call
         /// (identified by <paramref name="sessionKey"/>) closed them.
         /// </summary>
-        /// <remarks>
-        /// Resolves any unsaved modifications on the currently open scene(s) first (same prompt-avoidance as
-        /// <see cref="SaveAndCloseOpenScenes"/>). This matters in particular after lightmap baking, which leaves
-        /// the temporary benchmark scene dirty: without this, <see cref="EditorSceneManager.OpenScene"/> below
-        /// would silently fail to switch away from it (or block on a modal save prompt), so the temporary scene
-        /// would still be the active one by the time its containing folder gets deleted in
-        /// <see cref="CleanupLightmapBenchmarkScene"/> - and the next <see cref="SaveAndCloseOpenScenes"/> call
-        /// would then record that now-deleted temporary scene's path as the "originally open" scene to restore,
-        /// causing a "Scene file not found" error on the next benchmark run.
-        /// </remarks>
-        private static void RestoreOpenScenes(string sessionKey)
+        /// <param name="sessionKey">Identifies the matching <see cref="SaveAndCloseOpenScenes"/> call.</param>
+        /// <param name="promptToSaveModifiedScenes">
+        /// See <see cref="SaveAndCloseOpenScenes"/>. Either way, resolving the currently open scene(s)' dirty
+        /// state (by prompting or by saving silently) before reopening matters: without it,
+        /// <see cref="EditorSceneManager.OpenScene"/> below would silently fail to switch away from a dirty scene
+        /// (or block on a modal save prompt), so that scene would still be the active one by the time e.g.
+        /// <see cref="CleanupLightmapBenchmarkScene"/> deletes its containing temp folder - and the next
+        /// <see cref="SaveAndCloseOpenScenes"/> call would then record that now-deleted scene's path as the
+        /// "originally open" scene to restore, causing a "Scene file not found" error on the next benchmark run.
+        /// </param>
+        private static void RestoreOpenScenes(string sessionKey, bool promptToSaveModifiedScenes)
         {
             var joinedPaths = SessionState.GetString(sessionKey, string.Empty);
             SessionState.EraseString(sessionKey);
@@ -911,7 +956,14 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
                 return;
             }
 
-            EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo();
+            if (promptToSaveModifiedScenes)
+            {
+                EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo();
+            }
+            else
+            {
+                SaveModifiedOpenScenesWithoutPrompting();
+            }
 
             var paths = joinedPaths.Split(';');
             for (var i = 0; i < paths.Length; i++)
@@ -922,6 +974,28 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
                 }
 
                 EditorSceneManager.OpenScene(paths[i], i == 0 ? OpenSceneMode.Single : OpenSceneMode.Additive);
+            }
+        }
+
+        /// <summary>
+        /// Silently saves every currently open dirty scene to its own path (no confirmation dialog, unlike
+        /// <see cref="EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo"/>), so a subsequent
+        /// <see cref="EditorSceneManager.NewScene(NewSceneSetup, NewSceneMode)"/> or
+        /// <see cref="EditorSceneManager.OpenScene"/> call can switch away from it without Unity blocking on (or
+        /// silently no-oping because of) its unsaved changes. Used when the currently open scene is known to be
+        /// disposable (its containing folder is about to be deleted anyway), so the user is never prompted about
+        /// changes they didn't make and don't need to review - whether those changes end up saved to the
+        /// soon-to-be-deleted file or not makes no difference.
+        /// </summary>
+        private static void SaveModifiedOpenScenesWithoutPrompting()
+        {
+            for (var i = 0; i < SceneManager.sceneCount; i++)
+            {
+                var scene = SceneManager.GetSceneAt(i);
+                if (scene.isDirty)
+                {
+                    EditorSceneManager.SaveScene(scene);
+                }
             }
         }
 
@@ -1020,7 +1094,31 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
 
         private static void Abort()
         {
+            CleanUpAfterEarlyStop();
             Finish();
+        }
+
+        /// <summary>
+        /// Best-effort cleanup for a benchmark ending before it reaches its normal final state (via
+        /// <see cref="StopBenchmark"/> or a phase timing out), so the editor isn't left with scenes closed or
+        /// swapped out, or temporary build/lightmap directories still lying around. Each step below is a no-op
+        /// if its corresponding phase either hadn't started yet or had already cleaned up after itself normally,
+        /// so this is safe to call regardless of which phase the run was in when it stopped.
+        /// </summary>
+        private static void CleanUpAfterEarlyStop()
+        {
+            if (EditorApplication.isPlayingOrWillChangePlaymode)
+            {
+                EditorApplication.ExitPlaymode();
+            }
+
+            CleanupLightmapBenchmarkScene();
+
+            // Only relevant if stopped mid asset-import (the lightmap/build phases, if reached, already restore
+            // the real scene themselves before proceeding).
+            RestoreOpenScenes(_originalScenePathsKey, promptToSaveModifiedScenes: true);
+
+            CleanupBuildBenchmarkFolder();
         }
 
         private static void Finish()
