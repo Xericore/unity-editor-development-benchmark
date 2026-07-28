@@ -34,6 +34,14 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking.Categories
         private const string _assetsFolderPath = "Assets";
         private const string _tempFolderPath = "Assets/Temp/LightmapBenchmarkTemp";
 
+        /// <summary>
+        /// Appended to the original scene's file name (before its extension) for the temporary copy created by
+        /// <see cref="TrySetupBenchmarkScene"/>, so it's clearly identifiable as a disposable benchmark copy
+        /// rather than looking like the real scene (which it otherwise would, sitting under a different folder
+        /// but with an identical name).
+        /// </summary>
+        private const string _tempSceneSuffix = "_temp_lightmapping";
+
         private readonly PersistentRunCounter _runCounter = new(_keyPrefix, defaultCount: 1);
 
         public BenchmarkCategory Category => BenchmarkCategory.LightmapBaking;
@@ -125,7 +133,9 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking.Categories
             }
 
             var tempFolderPath = EnsureTempFolderExists();
-            var tempScenePath = $"{tempFolderPath}/{Path.GetFileName(originalScenePath)}";
+            var tempSceneFileName = Path.GetFileNameWithoutExtension(originalScenePath) + _tempSceneSuffix +
+                                     Path.GetExtension(originalScenePath);
+            var tempScenePath = $"{tempFolderPath}/{tempSceneFileName}";
 
             // In case a previous run's cleanup failed to run (e.g. the editor crashed mid-benchmark), make sure
             // we start from a clean slate rather than failing to copy over a leftover temporary scene.
@@ -156,11 +166,11 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking.Categories
             var tempFolderPath = SessionState.GetString(_tempFolderPathKey, string.Empty);
             SessionState.EraseString(_tempFolderPathKey);
 
-            // The scene being closed here is the temporary lightmap benchmark copy, dirtied by Lightmapping.Bake()
-            // - not something the user edited, and about to be deleted below regardless. Resolve its dirty state
-            // by saving it silently instead of prompting, since prompting would show a confusingly
-            // identical-looking dialog for a scene that shares the real scene's file name (whether those changes
-            // end up saved to the soon-to-be-deleted file or not makes no difference).
+            // The scene being closed here is the temporary lightmap benchmark copy (identifiable by its
+            // "_temp_lightmapping" suffix), dirtied by Lightmapping.Bake() - not something the user edited, and
+            // about to be deleted below regardless. Resolve its dirty state by saving it silently instead of
+            // prompting, so the user isn't asked to save changes they never made (whether those changes end up
+            // saved to the soon-to-be-deleted file or not makes no difference).
             EditorSceneStash.Restore(_originalScenePathsKey, promptToSaveModifiedScenes: false);
 
             if (!string.IsNullOrEmpty(tempFolderPath) && AssetDatabase.IsValidFolder(tempFolderPath))
