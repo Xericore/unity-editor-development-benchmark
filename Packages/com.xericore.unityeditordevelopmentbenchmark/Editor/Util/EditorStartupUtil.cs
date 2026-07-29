@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Globalization;
 using System.IO;
 using System.Text.RegularExpressions;
 using UnityEditor;
@@ -14,7 +15,16 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Util
         public static TimeSpan LastStartupDuration { get; private set; }
         
         private const string _editorStartupUtilSessionStartedKey = "EditorStartupUtil_SessionStarted";
-        
+
+        /// <summary>
+        /// Unlike <see cref="LastStartupDuration"/> (a plain static property, wiped by any domain reload) and
+        /// <see cref="SessionState"/> (wiped by a process restart), this <see cref="EditorPrefs"/> key survives
+        /// both, so callers that run some time after startup - possibly after a domain reload has already
+        /// happened - can still reliably retrieve this session's startup duration via
+        /// <see cref="TryGetPersistedLastStartupDuration"/>.
+        /// </summary>
+        private const string _lastStartupDurationTicksKey = "EditorStartupUtil_LastStartupDurationTicks";
+
         /// <summary>
         /// We need this to ensure that the event is fired after the first update of the editor.
         /// This is to make sure that all other InitializeOnLoad classes have been executed.
@@ -48,11 +58,38 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Util
 
             var startupTime = GetUtcStartupTimeFromEditorLog();
 
+            if (startupTime == DateTime.MinValue)
+            {
+                Debug.LogWarning("Could not determine Unity Editor startup time from the Editor log; skipping this session's startup duration.");
+                return;
+            }
+
             var startupDuration = DateTime.Now - startupTime;
 
             LastStartupDuration = startupDuration;
 
+            EditorPrefs.SetString(_lastStartupDurationTicksKey, startupDuration.Ticks.ToString(CultureInfo.InvariantCulture));
+
             UserWaited?.Invoke(startupDuration);
+        }
+
+        /// <summary>
+        /// Retrieves this session's startup duration from the <see cref="EditorPrefs"/>-backed store (see
+        /// <see cref="_lastStartupDurationTicksKey"/>), which - unlike <see cref="LastStartupDuration"/> - survives
+        /// domain reloads that may have happened between startup and the caller asking for it.
+        /// </summary>
+        public static bool TryGetPersistedLastStartupDuration(out TimeSpan duration)
+        {
+            var ticksString = EditorPrefs.GetString(_lastStartupDurationTicksKey, null);
+
+            if (ticksString == null || !long.TryParse(ticksString, NumberStyles.Integer, CultureInfo.InvariantCulture, out var ticks))
+            {
+                duration = TimeSpan.Zero;
+                return false;
+            }
+
+            duration = TimeSpan.FromTicks(ticks);
+            return true;
         }
 
         private static DateTime GetUtcStartupTimeFromEditorLog()

@@ -33,6 +33,18 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
     /// Everything specific to one category (its own sub-steps, temporary scenes/folders, etc.) lives in that
     /// category's own class under the <c>Categories</c> namespace instead of here.
     /// </remarks>
+    /// <remarks>
+    /// <see cref="BenchmarkCategory.EditorStartup"/> is neither an <see cref="IBenchmarkCategoryRunner"/> nor
+    /// stepped via <see cref="EditorApplication.update"/>, for the same underlying reason as
+    /// <see cref="BenchmarkCategory.DomainReload"/>: measuring it means measuring a full process cold-start (the
+    /// editor exiting and a new one launching), which wipes <see cref="SessionState"/> - and even plain static
+    /// fields - the instant the process exits. There's nothing to "drive" across that boundary from within this
+    /// process. Instead, <see cref="StartBenchmark(BenchmarkRunOptions)"/> simply reads back whichever startup
+    /// duration <see cref="EditorStartupUtil"/> already recorded (via its <see cref="EditorPrefs"/>-backed
+    /// <see cref="EditorStartupUtil.TryGetPersistedLastStartupDuration"/>, which survives both domain reloads and
+    /// process restarts) for the cold start that already happened when the editor launched to run this benchmark -
+    /// a single one-shot sample per run, not an N-times-averaged measurement like the other categories.
+    /// </remarks>
     [InitializeOnLoad]
     [UsedImplicitly]
     public static class BenchmarkRunner
@@ -157,6 +169,15 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
             foreach (BenchmarkCategory category in Enum.GetValues(typeof(BenchmarkCategory)))
             {
                 BenchmarkCategoryTimeTracker.Reset(category);
+            }
+
+            if (EditorStartupUtil.TryGetPersistedLastStartupDuration(out var editorStartupDuration))
+            {
+                BenchmarkCategoryTimeTracker.AddDuration(BenchmarkCategory.EditorStartup, editorStartupDuration);
+            }
+            else
+            {
+                Debug.LogWarning("Could not determine editor startup duration for this session; EditorStartup category will report zero.");
             }
 
             SetRunCount(BenchmarkCategory.Compilation, options.CompilationRunCount);

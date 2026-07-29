@@ -46,7 +46,12 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
         Build,
 
         /// <summary>
-        /// Stub. Not yet driven by <see cref="BenchmarkRunner"/>.
+        /// Time spent waiting for the Unity Editor process itself to start up. Implemented, but unlike every
+        /// other category here it's captured passively rather than driven step-by-step by
+        /// <see cref="BenchmarkRunner"/> - see <see cref="UnityEditorDevelopmentBenchmark.Editor.Util.EditorStartupUtil"/> and the
+        /// <see cref="BenchmarkRunner"/> class remarks. Reports a single one-shot sample per run (the cold start
+        /// that already happened when the editor launched to run this benchmark), not an average over multiple
+        /// runs like the other categories.
         /// </summary>
         EditorStartup,
 
