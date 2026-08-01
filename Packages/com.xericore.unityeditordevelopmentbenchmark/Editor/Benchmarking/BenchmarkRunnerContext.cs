@@ -14,7 +14,7 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
     {
         private const string _phaseStartTimeKey = "UnityEditorDevelopmentBenchmark.BenchmarkRunner.PhaseStartTime";
 
-        private const float _maxLoopTimeInSeconds = 10f;
+        private const float _maxLoopTimeInSeconds = 600f;
         private const float _preparationDelayInSeconds = 1f;
 
         public float PreparationDelaySeconds => _preparationDelayInSeconds;
