@@ -1,8 +1,8 @@
 using System;
 using System.Diagnostics;
 using System.Linq;
-using Cysharp.Threading.Tasks;
 using UnityEditor;
+using UnityEngine;
 using Debug = UnityEngine.Debug;
 
 namespace UnityEditorDevelopmentBenchmark.Editor.Util
@@ -24,13 +24,12 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Util
         
         private static void OnAfterAssemblyReload()
         {
-            UniTask.Void(WaitAndGetCompilationData);
+            _ = WaitAndGetCompilationData();
         }
 
-        private static async UniTaskVoid WaitAndGetCompilationData()
+        private static async Awaitable WaitAndGetCompilationData()
         {
-            // TODO: Check sharing violation of json file with needle tools CompilationTimelineWindow.cs
-            await UniTask.Delay(TimeSpan.FromSeconds(1));
+            await Awaitable.NextFrameAsync();
 
             var compilationData = CompilationData.GetAll();
 

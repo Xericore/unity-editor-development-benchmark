@@ -36,7 +36,7 @@ To run an automated benchmark, use **Window > Analysis > Start Benchmark** (`Ben
 
 ### Compilation timing detail (`Editor/Serialization/`, `MyCompliationData.cs`)
 
-Compilation/domain-reload timing needs finer-grained data than Unity's public events expose, so `CompilationData` (in `MyCompliationData.cs` — filename typo is intentional/existing, don't "fix" it as an unrelated rename) parses Unity's internal Bee build system profiler trace at `Library/Bee/fullprofile.json` (`Library/Bee/profiler.json` on older Unity) via `BeeProfilerData`/`TraceData`/`AssemblyCompilationData`, cross-references it against `TraceData.instance` timestamps, and reconstructs accurate per-assembly `Csc` compilation spans. `AssemblyReloadTimer` (in `Util/`) calls this ~1s after `AssemblyReloadEvents.afterAssemblyReload` (via UniTask) to let the Bee trace file finish being written before reading it.
+Compilation/domain-reload timing needs finer-grained data than Unity's public events expose, so `CompilationData` (in `MyCompliationData.cs` — filename typo is intentional/existing, don't "fix" it as an unrelated rename) parses Unity's internal Bee build system profiler trace at `Library/Bee/fullprofile.json` (`Library/Bee/profiler.json` on older Unity) via `BeeProfilerData`/`TraceData`/`AssemblyCompilationData`, cross-references it against `TraceData.instance` timestamps, and reconstructs accurate per-assembly `Csc` compilation spans. `AssemblyReloadTimer` (in `Util/`) calls this ~1s after `AssemblyReloadEvents.afterAssemblyReload` (via `Awaitable.WaitForSecondsAsync`) to let the Bee trace file finish being written before reading it.
 
 ### Version-guarded APIs
 
@@ -51,7 +51,7 @@ When touching editor-event integrations, check whether the underlying Unity API 
 
 - Namespace root is `UnityEditorDevelopmentBenchmark`; the package assembly is `UnityEditorDevelopmentBenchmark.Editor` (editor-only asmdef, see `Editor/UnityEditorDevelopmentBenchmark.Editor.asmdef`).
 - Private fields are `_camelCase`; per `.editorconfig`, 4-space indent, CRLF line endings.
-- Package dependencies (`com.cysharp.unitask`, `com.needle.compilation-visualizer`, `com.unity.ide.rider`) come from the `package.openupm.com` scoped registry declared in `Packages/manifest.json`.
+- Package dependencies (`com.needle.compilation-visualizer`, `com.unity.ide.rider`) come from the `package.openupm.com` scoped registry declared in `Packages/manifest.json`.
 
 ### Not part of the package
 

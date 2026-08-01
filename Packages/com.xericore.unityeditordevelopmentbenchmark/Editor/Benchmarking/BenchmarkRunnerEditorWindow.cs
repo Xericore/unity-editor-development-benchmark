@@ -97,12 +97,13 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
         {
             var categoryResults = _results.Where(result => !result.IsTotal).ToList();
 
-            // Color-coded (and ranged) by average duration, since that's what the Duration column displays; the
-            // Ratio column separately uses each row's TotalDuration, so a category's ratio still reflects how
-            // much of the whole run it actually consumed regardless of how many times it ran.
+            // Color-coded (and ranged) by average duration, since that's what the Duration column displays. The
+            // Ratio column is also derived from AverageDuration (rather than each category's raw total), so a
+            // category that simply ran more times than another (e.g. 3 play mode switches vs 1 build) doesn't get
+            // an inflated ratio relative to what the Duration column shows for it.
             var minSeconds = categoryResults.Count > 0 ? categoryResults.Min(result => result.AverageDuration.TotalSeconds) : 0d;
             var maxSeconds = categoryResults.Count > 0 ? categoryResults.Max(result => result.AverageDuration.TotalSeconds) : 0d;
-            var totalSeconds = _results.Last().TotalDuration.TotalSeconds;
+            var totalAverageSeconds = categoryResults.Sum(result => result.AverageDuration.TotalSeconds);
 
             var table = new MultiColumnListView
             {
@@ -156,7 +157,11 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
                     var data = _results[i];
                     var progressBar = (ProgressBar) element;
 
-                    var ratio = totalSeconds > 0d ? data.TotalDuration.TotalSeconds / totalSeconds : 0d;
+                    // The "Total" row has no meaningful ratio of its own (it's the 100% reference the other rows
+                    // are measured against), so it's pinned to a full bar rather than computed like the others.
+                    var ratio = totalAverageSeconds <= 0d ? 0d
+                        : data.IsTotal ? 1d
+                        : data.AverageDuration.TotalSeconds / totalAverageSeconds;
                     progressBar.value = (float) ratio * 100f;
                     progressBar.title = $"{ratio:P1}";
 
@@ -188,12 +193,11 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
                 .Select(category => new BenchmarkCategoryResultData(
                     category.ToString(),
                     BenchmarkCategoryTimeTracker.GetAverage(category),
-                    BenchmarkCategoryTimeTracker.GetTotal(category),
                     isTotal: false))
                 .ToList();
 
             var totalDuration = BenchmarkCategoryTimeTracker.GetTotalDurationFromAllCategories();
-            results.Add(new BenchmarkCategoryResultData("Total", totalDuration, totalDuration, isTotal: true));
+            results.Add(new BenchmarkCategoryResultData("Total", totalDuration, isTotal: true));
 
             return results;
         }
