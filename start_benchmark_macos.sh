@@ -44,4 +44,20 @@ if [ -z "$UNITY_APP" ]; then
     exit 1
 fi
 
-"$UNITY_APP" -projectPath "$SCRIPT_DIR" -logFile - -executeMethod UnityEditorDevelopmentBenchmark.Editor.Benchmarking.BenchmarkRunner.StartBenchmarkHeadless
+# Unity's own console output is extremely verbose (internal engine/editor chatter), so the full log is
+# written to LOG_FILE for troubleshooting, while stdout only shows the benchmark's own per-category
+# progress and final summary, matched via UNITY_LOG_FILTER.
+LOG_FILE="${TMPDIR:-/tmp}/unity-editor-development-benchmark.log"
+UNITY_LOG_FILTER='\([0-9]+/[0-9]+\), took|Domain reload finished, took|Entered play mode\.|Skipping .* benchmark category:|Timeout while waiting|Starting benchmark \(|Preparing benchmark\.\.\.|Finished benchmark\.\.\.|Benchmark total time:|Category breakdown \(average per run\):|<color=#|exiting editor|Benchmark stopped by user'
+
+# Temporarily disable errexit: a non-zero exit here (e.g. an aborted benchmark run) is an expected
+# outcome we want to report below, not something that should kill this script before we get the chance.
+set +e
+"$UNITY_APP" -projectPath "$SCRIPT_DIR" -logFile "$LOG_FILE" -executeMethod UnityEditorDevelopmentBenchmark.Editor.Benchmarking.BenchmarkRunner.StartBenchmarkHeadless
+UNITY_EXIT_CODE=$?
+set -e
+
+grep -E "$UNITY_LOG_FILTER" "$LOG_FILE" || true
+echo "(Full log: $LOG_FILE)"
+
+exit "$UNITY_EXIT_CODE"

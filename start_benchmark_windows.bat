@@ -40,4 +40,15 @@ if not defined UNITY_EXE (
     exit /b 1
 )
 
-"%UNITY_EXE%" -projectPath "%~dp0." -logFile - -executeMethod UnityEditorDevelopmentBenchmark.Editor.Benchmarking.BenchmarkRunner.StartBenchmarkHeadless
+rem Unity's own console output is extremely verbose (internal engine/editor chatter), so the full log is
+rem written to LOG_FILE for troubleshooting, while stdout only shows the benchmark's own per-category
+rem progress and final summary, filtered out via PowerShell (findstr's regex support lacks "+"/alternation).
+set "LOG_FILE=%TEMP%\unity-editor-development-benchmark.log"
+
+"%UNITY_EXE%" -projectPath "%~dp0." -logFile "%LOG_FILE%" -executeMethod UnityEditorDevelopmentBenchmark.Editor.Benchmarking.BenchmarkRunner.StartBenchmarkHeadless
+set "EXITCODE=%ERRORLEVEL%"
+
+powershell -NoProfile -Command "Select-String -Path '%LOG_FILE%' -Pattern '\([0-9]+/[0-9]+\), took','Domain reload finished, took','Entered play mode\.','Skipping .* benchmark category:','Timeout while waiting','Starting benchmark \(','Preparing benchmark\.\.\.','Finished benchmark\.\.\.','Benchmark total time:','Category breakdown \(average per run\):','<color=#','exiting editor','Benchmark stopped by user' | ForEach-Object { $_.Line }"
+echo (Full log: %LOG_FILE%)
+
+exit /b %EXITCODE%
