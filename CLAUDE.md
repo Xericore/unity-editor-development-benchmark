@@ -18,7 +18,7 @@ The package still carries preprocessor guards for older Unity versions (down to 
 
 To exercise the tool manually, use the editor menu **Window > Analysis > User Wait Time Tracker** (`UserWaitTimeEditorWindow`), which shows the live table this package produces.
 
-To run an automated benchmark, use **Window > Analysis > Start Benchmark** (`BenchmarkRunner.StartBenchmark`), or invoke it headlessly from the command line via `start_benchmark_windows.bat`, which runs `Unity.exe -projectPath .\ -executeMethod UnityEditorDevelopmentBenchmark.Editor.BenchmarkRunner.StartBenchmark`. This waits for any pending compilation, enters play mode, waits briefly, exits play mode, and logs total elapsed time (including last-recorded editor startup duration) to the console — useful for scripted, repeatable machine-to-machine comparisons rather than manual poking around in the editor.
+To run an automated benchmark, use **Window > Analysis > Start Benchmark** (`BenchmarkRunner.StartBenchmark`), or invoke it headlessly from the command line via `start_benchmark_windows.bat` (or `start_benchmark_macos.sh` on macOS), which run `Unity.exe -projectPath .\ -executeMethod UnityEditorDevelopmentBenchmark.Editor.Benchmarking.BenchmarkRunner.StartBenchmark` (with the Unity editor version and install location resolved automatically from `ProjectSettings/ProjectVersion.txt`). This waits for any pending compilation, enters play mode, waits briefly, exits play mode, and logs total elapsed time (including last-recorded editor startup duration) to the console — useful for scripted, repeatable machine-to-machine comparisons rather than manual poking around in the editor.
 
 ## Architecture
 
