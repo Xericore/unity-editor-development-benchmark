@@ -1,9 +1,9 @@
 ﻿using System;
+using System.Diagnostics;
 using System.Globalization;
-using System.IO;
-using System.Text.RegularExpressions;
 using UnityEditor;
 using UnityEngine;
+using Debug = UnityEngine.Debug;
 
 namespace UnityEditorDevelopmentBenchmark.Editor.Util
 {
@@ -56,11 +56,11 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Util
             
             EditorPrefs.SetBool(_editorStartupUtilSessionStartedKey, true);
 
-            var startupTime = GetUtcStartupTimeFromEditorLog();
+            var startupTime = GetProcessStartTime();
 
             if (startupTime == DateTime.MinValue)
             {
-                Debug.LogWarning("Could not determine Unity Editor startup time from the Editor log; skipping this session's startup duration.");
+                Debug.LogWarning("Could not determine this Unity Editor process's start time; skipping this session's startup duration.");
                 return;
             }
 
@@ -92,40 +92,23 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Util
             return true;
         }
 
-        private static DateTime GetUtcStartupTimeFromEditorLog()
+        /// <summary>
+        /// Uses this process's OS-recorded creation time rather than parsing a timestamp out of the Editor log.
+        /// <see cref="Application.consoleLogPath"/> (Editor.log) is shared per Editor install/user, not per
+        /// project or per process, so if another instance of the same Editor version starts around the same time
+        /// (concurrently, or in quick succession before log rotation completes) a log-based approach can pick up
+        /// the wrong session's timestamp. <see cref="Process.StartTime"/> is inherently scoped to this process, so
+        /// it can't be confused by any other instance.
+        /// </summary>
+        private static DateTime GetProcessStartTime()
         {
             try
             {
-                var logPath = Application.consoleLogPath;
-                var utcPattern = new Regex(@"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z)");
-
-                using var stream = new FileStream(logPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-                using var reader = new StreamReader(stream);
-
-                string line;
-
-                while ((line = reader.ReadLine()) != null)
-                {
-                    var match = utcPattern.Match(line);
-                    if (!match.Success)
-                    {
-                        continue;
-                    }
-
-                    if (DateTime.TryParse(match.Groups[1].Value, out var startTime))
-                    {
-                        Debug.Log("Unity Editor startup time found in log: " + startTime);
-                        return startTime;
-                    }
-
-                    return DateTime.MinValue;
-                }
-
-                return DateTime.MinValue;
+                return Process.GetCurrentProcess().StartTime;
             }
             catch (Exception e)
             {
-                Debug.LogError($"Error trying to get startup time from Editor log file: {e.Message}");
+                Debug.LogError($"Error trying to get this Editor process's start time: {e.Message}");
                 return DateTime.MinValue;
             }
         }
