@@ -125,18 +125,22 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
         }
 
         /// <summary>
-        /// Sum of <see cref="GetTotal"/> across every <see cref="BenchmarkCategory"/>. This is the authoritative
+        /// Sum of <see cref="GetAverage"/> across every <see cref="BenchmarkCategory"/>. This is the authoritative
         /// total duration for a benchmark run; callers must not derive it independently (e.g. from wall-clock time
-        /// between start and end), since that would also include untracked phases (such as waiting for
-        /// compilation before the first category starts) and silently diverge from the sum of the categories.
+        /// between start and end, or by summing <see cref="GetAllTotals"/>), since that would also include
+        /// untracked phases (such as waiting for compilation before the first category starts) and, more
+        /// importantly, would silently diverge from the sum of the per-category averages actually displayed - a
+        /// category that simply ran more than once (e.g. 3 play mode switches vs 1 build by default) would inflate
+        /// the total via its raw <see cref="GetTotal"/> despite that repetition not being reflected anywhere else
+        /// in the breakdown.
         /// </summary>
         public static TimeSpan GetTotalDurationFromAllCategories()
         {
             var total = TimeSpan.Zero;
 
-            foreach (var categoryTotal in GetAllTotals().Values)
+            foreach (var categoryAverage in GetAllAverages().Values)
             {
-                total += categoryTotal;
+                total += categoryAverage;
             }
 
             return total;
