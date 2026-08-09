@@ -44,4 +44,4 @@ if [ -z "$UNITY_APP" ]; then
     exit 1
 fi
 
-"$UNITY_APP" -projectPath "$SCRIPT_DIR" -executeMethod UnityEditorDevelopmentBenchmark.Editor.Benchmarking.BenchmarkRunner.StartBenchmark
+"$UNITY_APP" -projectPath "$SCRIPT_DIR" -logFile - -executeMethod UnityEditorDevelopmentBenchmark.Editor.Benchmarking.BenchmarkRunner.StartBenchmarkHeadless

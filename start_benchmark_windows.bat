@@ -40,4 +40,4 @@ if not defined UNITY_EXE (
     exit /b 1
 )
 
-"%UNITY_EXE%" -projectPath "%~dp0." -executeMethod UnityEditorDevelopmentBenchmark.Editor.Benchmarking.BenchmarkRunner.StartBenchmark
+"%UNITY_EXE%" -projectPath "%~dp0." -logFile - -executeMethod UnityEditorDevelopmentBenchmark.Editor.Benchmarking.BenchmarkRunner.StartBenchmarkHeadless

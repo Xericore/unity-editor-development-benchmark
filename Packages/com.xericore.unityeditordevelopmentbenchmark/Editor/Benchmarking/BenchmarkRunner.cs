@@ -13,7 +13,7 @@ using Debug = UnityEngine.Debug;
 namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
 {
     /// <summary>
-    /// To be called from the command line.
+    /// To be called from the command line via <see cref="StartBenchmarkHeadless"/>.
     /// </summary>
     /// <remarks>
     /// Entering play mode triggers a domain reload, which destroys any in-memory coroutine/closure state
@@ -71,6 +71,8 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
         private const string _stateKey = "UnityEditorDevelopmentBenchmark.BenchmarkRunner.State";
         private const string _currentCategoryIndexKey = "UnityEditorDevelopmentBenchmark.BenchmarkRunner.CurrentCategoryIndex";
         private const string _runCountKeyPrefix = "UnityEditorDevelopmentBenchmark.BenchmarkRunner.RunCount.";
+        private const string _headlessKey = "UnityEditorDevelopmentBenchmark.BenchmarkRunner.Headless";
+        private const string _headlessAbortedKey = "UnityEditorDevelopmentBenchmark.BenchmarkRunner.HeadlessAborted";
 
         /// <summary>
         /// One runner per <see cref="BenchmarkCategory"/> this benchmark drives, in the order they run. Held as a
@@ -136,19 +138,48 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
             StartBenchmark(new BenchmarkRunOptions());
         }
 
+        /// <summary>
+        /// Same as <see cref="StartBenchmark()"/>, but additionally quits the editor once the run finishes -
+        /// normally or aborted, with exit code 1 in the aborted case - rather than leaving it open. Meant to be
+        /// invoked via <c>-executeMethod</c> from the command line (see <c>start_benchmark_macos.sh</c> /
+        /// <c>start_benchmark_windows.bat</c>), so a scripted run doesn't leave the editor sitting open
+        /// afterwards; deliberately not wired to a menu item, since quitting the editor out from under an
+        /// interactive session would be surprising. The "headless" flag driving this is
+        /// <see cref="SessionState"/>-backed (<see cref="_headlessKey"/>) rather than an in-memory subscription to
+        /// <see cref="BenchmarkFinished"/>, since the benchmark's own <see cref="BenchmarkCategory.Compilation"/>
+        /// category triggers domain reloads that would otherwise silently drop such a subscription before the run
+        /// actually finishes.
+        /// </summary>
         [UsedImplicitly]
-        public static void StartBenchmark(BenchmarkRunOptions options)
+        public static void StartBenchmarkHeadless()
+        {
+            if (!StartBenchmark(new BenchmarkRunOptions()))
+            {
+                Debug.LogError("Could not start benchmark in headless mode; exiting.");
+                EditorApplication.Exit(1);
+                return;
+            }
+
+            SessionState.SetBool(_headlessKey, true);
+        }
+
+        /// <summary>
+        /// Returns whether the run actually started (<c>false</c> if the editor was already in/entering play mode,
+        /// or a benchmark was already in progress).
+        /// </summary>
+        [UsedImplicitly]
+        public static bool StartBenchmark(BenchmarkRunOptions options)
         {
             if (EditorApplication.isPlayingOrWillChangePlaymode)
             {
                 Debug.LogWarning("Cannot start benchmark while in play mode.");
-                return;
+                return false;
             }
 
             if (GetState() != OrchestratorState.None)
             {
                 Debug.LogWarning("A benchmark is already in progress.");
-                return;
+                return false;
             }
 
             options ??= new BenchmarkRunOptions();
@@ -186,10 +217,13 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
             SetRunCount(BenchmarkCategory.Build, options.BuildRunCount);
             SetRunCount(BenchmarkCategory.PlayModeSwitch, options.PlayModeSwitchCount);
 
+            SessionState.SetBool(_headlessAbortedKey, false);
             SetState(OrchestratorState.WaitingForInitialCompilation);
             _context.ResetPhaseTimer();
 
             EditorApplication.update += Step;
+
+            return true;
         }
 
         /// <summary>
@@ -347,6 +381,7 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
                 runner.Abort();
             }
 
+            SessionState.SetBool(_headlessAbortedKey, true);
             Finish();
         }
 
@@ -356,6 +391,19 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
             EditorApplication.update -= Step;
 
             BenchmarkFinished?.Invoke();
+
+            if (SessionState.GetBool(_headlessKey, false))
+            {
+                var aborted = SessionState.GetBool(_headlessAbortedKey, false);
+                SessionState.SetBool(_headlessKey, false);
+                SessionState.SetBool(_headlessAbortedKey, false);
+
+                Debug.Log(aborted
+                    ? "<color=orange>Benchmark aborted; exiting editor with exit code 1.</color>"
+                    : "<color=lime>Benchmark finished; exiting editor.</color>");
+
+                EditorApplication.Exit(aborted ? 1 : 0);
+            }
         }
 
         private static int ClampToAtLeastOne(int value, string parameterName)
