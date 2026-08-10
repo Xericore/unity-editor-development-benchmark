@@ -180,7 +180,7 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
         }
 
         /// <summary>
-        /// One row per <see cref="BenchmarkCategory"/> (ordered the same way as
+        /// One row per <see cref="BenchmarkCategory"/> (ordered by that enum's declaration order, the same way as
         /// <see cref="BenchmarkRunner"/>'s console log breakdown) plus a trailing "Total" row, sourced from
         /// <see cref="BenchmarkCategoryTimeTracker"/>'s running totals/averages for the last (or currently
         /// in-progress) benchmark run.
@@ -189,7 +189,6 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
         {
             var results = Enum.GetValues(typeof(BenchmarkCategory))
                 .Cast<BenchmarkCategory>()
-                .OrderBy(category => category.ToString())
                 .Select(category => new BenchmarkCategoryResultData(
                     category.ToString(),
                     BenchmarkCategoryTimeTracker.GetAverage(category),

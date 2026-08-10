@@ -75,19 +75,22 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
         private const string _headlessAbortedKey = "UnityEditorDevelopmentBenchmark.BenchmarkRunner.HeadlessAborted";
 
         /// <summary>
-        /// One runner per <see cref="BenchmarkCategory"/> this benchmark drives, in the order they run. Held as a
-        /// static readonly array (recreated fresh after every domain reload, since these instances hold no state
-        /// of their own - see <see cref="IBenchmarkCategoryRunner"/>) purely to fix that order in one obvious
-        /// place, the same reasoning <see cref="UnityEditorDevelopmentBenchmark.Editor.UserWaitTimeAggregator"/>
-        /// uses for its trackers.
+        /// One runner per <see cref="BenchmarkCategory"/> this benchmark drives, in the order they run - the same
+        /// relative order as <see cref="BenchmarkCategory"/>'s declaration (skipping <see cref="BenchmarkCategory.EditorStartup"/>
+        /// and <see cref="BenchmarkCategory.DomainReload"/>, neither of which is stepped via an
+        /// <see cref="IBenchmarkCategoryRunner"/> - see this class's remarks on both). Held as a static readonly
+        /// array (recreated fresh after every domain reload, since these instances hold no state of their own -
+        /// see <see cref="IBenchmarkCategoryRunner"/>) purely to fix that order in one obvious place, the same
+        /// reasoning <see cref="UnityEditorDevelopmentBenchmark.Editor.UserWaitTimeAggregator"/> uses for its
+        /// trackers.
         /// </summary>
         private static readonly IBenchmarkCategoryRunner[] _categoryRunners =
         {
-            new CompilationBenchmarkCategoryRunner(),
             new AssetImportBenchmarkCategoryRunner(),
+            new CompilationBenchmarkCategoryRunner(),
             new LightmapBakingBenchmarkCategoryRunner(),
-            new BuildBenchmarkCategoryRunner(),
-            new PlayModeSwitchBenchmarkCategoryRunner()
+            new PlayModeSwitchBenchmarkCategoryRunner(),
+            new BuildBenchmarkCategoryRunner()
         };
 
         private static readonly IBenchmarkRunnerContext _context = new BenchmarkRunnerContext();
@@ -131,7 +134,6 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
             Debug.Log($"Domain reload finished, took {domainReloadDuration}.");
         }
 
-        [MenuItem("Window/Analysis/Start Benchmark")]
         [UsedImplicitly]
         public static void StartBenchmark()
         {
@@ -232,7 +234,6 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
         /// category reporting <see cref="BenchmarkCategoryTickResult.Failed"/> would. Categories that hadn't
         /// finished yet simply keep whatever partial total they'd accumulated so far.
         /// </summary>
-        [MenuItem("Window/Analysis/Stop Benchmark")]
         [UsedImplicitly]
         public static void StopBenchmark()
         {
@@ -356,8 +357,9 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
             var builder = new StringBuilder();
             builder.AppendLine("Category breakdown (average per run):");
 
-            foreach (var (category, average) in averages.OrderBy(pair => pair.Key.ToString()))
+            foreach (BenchmarkCategory category in Enum.GetValues(typeof(BenchmarkCategory)))
             {
+                var average = averages[category];
                 var color = BenchmarkCategoryTimeTracker.GetDurationColor(average.TotalSeconds, minSeconds, maxSeconds);
                 var colorHex = ColorUtility.ToHtmlStringRGB(color);
                 builder.AppendLine($"  <color=#{colorHex}>{category,-16} {average:hh\\:mm\\:ss\\.fff}</color>");

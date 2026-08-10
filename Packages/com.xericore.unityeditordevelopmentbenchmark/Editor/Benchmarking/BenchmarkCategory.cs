@@ -1,4 +1,4 @@
-﻿using UnityEditorDevelopmentBenchmark.Editor.UserWaitTimeTrackers;
+using UnityEditorDevelopmentBenchmark.Editor.UserWaitTimeTrackers;
 
 namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
 {
@@ -11,12 +11,29 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
     /// by <see cref="BenchmarkRunner"/>. The remaining values are stubs for categories the benchmark does not
     /// yet exercise.
     /// </remarks>
+    /// <remarks>
+    /// Declared in the order both <see cref="UserWaitTimeAggregator"/> (see
+    /// <see cref="UserWaitTimeAggregator.GetWaitTimeData"/>) and <see cref="BenchmarkRunnerEditorWindow"/> display
+    /// these categories in, and (for the categories <see cref="BenchmarkRunner"/> actually steps through) the
+    /// order it runs them in - see <see cref="BenchmarkRunner"/>'s remarks on <c>_categoryRunners</c>.
+    /// </remarks>
     public enum BenchmarkCategory
     {
         /// <summary>
-        /// Time spent entering and exiting play mode. Implemented, driven by <see cref="BenchmarkRunner"/>.
+        /// Time spent waiting for the Unity Editor process itself to start up. Implemented, but unlike every
+        /// other category here it's captured passively rather than driven step-by-step by
+        /// <see cref="BenchmarkRunner"/> - see <see cref="UnityEditorDevelopmentBenchmark.Editor.Util.EditorStartupUtil"/> and the
+        /// <see cref="BenchmarkRunner"/> class remarks. Reports a single one-shot sample per run (the cold start
+        /// that already happened when the editor launched to run this benchmark), not an average over multiple
+        /// runs like the other categories.
         /// </summary>
-        PlayModeSwitch,
+        EditorStartup,
+
+        /// <summary>
+        /// Time spent forcing full reimports of everything under the "Assets" folder (never "Packages").
+        /// Implemented, driven by <see cref="BenchmarkRunner"/>.
+        /// </summary>
+        AssetImport,
 
         /// <summary>
         /// Time spent forcing full script recompilations. Implemented, driven by <see cref="BenchmarkRunner"/>.
@@ -32,10 +49,16 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
         DomainReload,
 
         /// <summary>
-        /// Time spent forcing full reimports of everything under the "Assets" folder (never "Packages").
-        /// Implemented, driven by <see cref="BenchmarkRunner"/>.
+        /// Time spent baking lightmaps for the scene assigned to "Lightmap Benchmark Scene" in
+        /// Project Settings &gt; Development Benchmark. Implemented, driven by <see cref="BenchmarkRunner"/>.
+        /// Skipped (and reported as zero) if no scene is assigned.
         /// </summary>
-        AssetImport,
+        LightmapBaking,
+
+        /// <summary>
+        /// Time spent entering and exiting play mode. Implemented, driven by <see cref="BenchmarkRunner"/>.
+        /// </summary>
+        PlayModeSwitch,
 
         /// <summary>
         /// Time spent building a player for the currently selected active build target (<see cref="UnityEditor.EditorUserBuildSettings.activeBuildTarget"/>), using the scenes currently enabled in
@@ -43,23 +66,6 @@ namespace UnityEditorDevelopmentBenchmark.Editor.Benchmarking
         /// Implemented, driven by <see cref="BenchmarkRunner"/>. Skipped (and reported as zero) if no scenes are
         /// enabled in Build Settings.
         /// </summary>
-        Build,
-
-        /// <summary>
-        /// Time spent waiting for the Unity Editor process itself to start up. Implemented, but unlike every
-        /// other category here it's captured passively rather than driven step-by-step by
-        /// <see cref="BenchmarkRunner"/> - see <see cref="UnityEditorDevelopmentBenchmark.Editor.Util.EditorStartupUtil"/> and the
-        /// <see cref="BenchmarkRunner"/> class remarks. Reports a single one-shot sample per run (the cold start
-        /// that already happened when the editor launched to run this benchmark), not an average over multiple
-        /// runs like the other categories.
-        /// </summary>
-        EditorStartup,
-
-        /// <summary>
-        /// Time spent baking lightmaps for the scene assigned to "Lightmap Benchmark Scene" in
-        /// Project Settings &gt; Development Benchmark. Implemented, driven by <see cref="BenchmarkRunner"/>.
-        /// Skipped (and reported as zero) if no scene is assigned.
-        /// </summary>
-        LightmapBaking
+        Build
     }
 }
